@@ -62,5 +62,7 @@ logs/
 *.backup
 EOF
 
-# doc
+# Office Documents
 *.docx
+*.doc
+*.pdf
