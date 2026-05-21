@@ -126,4 +126,4 @@ if __name__ == '__main__':
     '''
     print("Tokens: ")
     for tok in lexer.tokenize(code):
-        print(f"  {tok.type:10} {repr(tok.value):12} ( {tok.lineno})")
+        print(f"  {tok.type:10} {repr(tok.value):12} (line: {tok.lineno})")
