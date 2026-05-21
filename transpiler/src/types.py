@@ -4,7 +4,7 @@
 
 from typing import Optional, Dict, Set, List
 from enum import Enum
-from .ast import ASTNode, ProgramNode
+from .myast import ASTNode, ProgramNode
 
 class DataType(Enum):
     """数据类型枚举"""

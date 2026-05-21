@@ -3,7 +3,7 @@ C代码生成器 - 将AST转换为C语言代码
 """
 
 from typing import List, Optional, Dict, Set
-from .ast import (
+from .myast import (
     ASTNode, ProgramNode, LetStatementNode, FunctionLiteralNode,
     MatchExpressionNode, OptionValueNode, VectorLiteralNode,
     StructDefinitionNode, MethodImplementationNode

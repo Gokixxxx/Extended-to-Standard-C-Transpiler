@@ -4,7 +4,7 @@
 
 from typing import List, Optional
 from .lexer import Token
-from .ast import (
+from .myast import (
     ASTNode, ProgramNode, StatementNode, ExpressionNode,
     LetStatementNode, FunctionLiteralNode, OptionValueNode,
     VectorLiteralNode, StructDefinitionNode,
