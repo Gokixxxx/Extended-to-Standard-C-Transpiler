@@ -1,0 +1,12 @@
+#include "option.h"
+
+int main() {
+    Option_i32 x = Some_i32(5);
+    int y;
+    if (x.is_some) {
+        y = (x.value + 10);
+    } else {
+        y = 0;
+    }
+    return 0;
+}

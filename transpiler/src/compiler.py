@@ -131,6 +131,18 @@ def main():
         print(f"编译错误: {e}", file=sys.stderr)
         sys.exit(1)
 
+def compile_rustlike_to_c(source_code: str) -> str:
+    """
+    将 Rust-like 源码编译为 C 代码的便捷函数
+    
+    Args:
+        source_code: 输入的 Rust-like 源代码字符串
+        
+    Returns:
+        生成的 C 代码字符串
+    """
+    compiler = Compiler()
+    return compiler.compile(source_code)
 
 if __name__ == '__main__':
     import sys
