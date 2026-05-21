@@ -1,128 +1,129 @@
 """
 词法分析器
 """
-import ply.lex as lex
+from sly import Lexer
+from typing import Any
+_: Any
 
-# Token 列表
-tokens = (
-    'FN', 'LET', 'MUT', 'IF', 'ELSE', 'WHILE', 'FOR', 'IN',
-    'MATCH', 'RETURN', 'PUB', 'USE', 'MOD', 'CRATE',
-    'STRUCT', 'ENUM', 'IMPL', 'TRAIT', 'TYPE',
-    'IDENTIFIER',
-    'INTEGER', 'FLOAT_LITERAL',
-    'CHAR_LITERAL', 'STRING_LITERAL',
-    'LPAREN', 'RPAREN', 'LBRACE', 'RBRACE', 'LBRACKET', 'RBRACKET',
-    'SEMICOLON', 'COMMA', 'DOT',
-    'PLUS', 'MINUS', 'TIMES', 'DIVIDE',
-    'EQUALS', 'NEQUALS', 'LESS', 'GREATER', 'LESSEQUAL', 'GREATEREQUAL',
-    'ASSIGN',
-    'AMPERSAND',
-)
-
-# 关键字映射
-reserved = {
-    'fn': 'FN',
-    'let': 'LET',
-    'mut': 'MUT',
-    'if': 'IF',
-    'else': 'ELSE',
-    'while': 'WHILE',
-    'for': 'FOR',
-    'in': 'IN',
-    'match': 'MATCH',
-    'return': 'RETURN',
-    'pub': 'PUB',
-    'use': 'USE',
-    'mod': 'MOD',
-    'crate': 'CRATE',
-    'struct': 'STRUCT',
-    'enum': 'ENUM',
-    'impl': 'IMPL',
-    'trait': 'TRAIT',
-    'type': 'TYPE',
-}
-
-# 简单的 token 规则
-t_LPAREN    = r'\('
-t_RPAREN    = r'\)'
-t_LBRACE    = r'\{'
-t_RBRACE    = r'\}'
-t_LBRACKET  = r'\['
-t_RBRACKET  = r'\]'
-t_SEMICOLON = r';'
-t_COMMA     = r','
-t_DOT       = r'\.'
-t_PLUS      = r'\+'
-t_MINUS     = r'-'
-t_TIMES     = r'\*'
-t_DIVIDE    = r'/'
-t_EQUALS    = r'=='
-t_NEQUALS   = r'!='
-t_LESS      = r'<'
-t_GREATER   = r'>'
-t_LESSEQUAL = r'<='
-t_GREATEREQUAL = r'>='
-t_ASSIGN    = r'='
-t_AMPERSAND = r'&'
-
-# 忽略空白字符
-t_ignore = ' \t'
-
-def t_IDENTIFIER(t):
-    r'[a-zA-Z_][a-zA-Z_0-9]*'
-    t.type = reserved.get(t.value, 'IDENTIFIER')
-    return t
-
-def t_FLOAT_LITERAL(t):
-    r'\d+\.\d+'
-    t.value = float(t.value)
-    return t
-
-def t_INTEGER(t):
-    r'\d+'
-    t.value = int(t.value)
-    return t
-
-def t_CHAR_LITERAL(t):
-    r"'([^'\\]|\\.)*'"
-    t.value = t.value[1:-1]  # 去掉引号
-    return t
-
-def t_STRING_LITERAL(t):
-    r'"([^"\\]|\\.)*"'
-    t.value = t.value[1:-1]  # 去掉引号
-    return t
-
-def t_newline(t):
-    r'\n+'
-    t.lexer.lineno += len(t.value)
-
-def t_error(t):
-    print(f"Illegal character '{t.value[0]}' at line {t.lexer.lineno}")
-    t.lexer.skip(1)
-
-# 构建 lexer
-lexer = lex.lex()
-
-# 测试函数
-def test():
-    data = '''
-    fn main() {
-        let x = 42;
-        let y = 3.14;
-        let s = "hello";
-        if x > 0 {
-            return x;
-        }
-    }
-    '''
+class RustLikeLexer(Lexer):
+    tokens = {'LET', 'SOME', 'NONE', 'IS_SOME', 'IS_NONE', 'MATCH',
+              'IDENTIFIER', 'NUMBER',
+              'EQ', 'PLUS', 'MINUS', 'TIMES', 'DIVIDE',
+              'EQEQ', 'NEQ',
+              'LPAREN', 'RPAREN', 'LBRACE', 'RBRACE',
+              'SEMI', 'COMMA', 'FAT_ARROW'}
     
-    lexer.input(data)
-    while True:
-        tok = lexer.token()
-        if not tok:
-            break
-        print(tok)
+    @_(r'\blet\b')
+    def LET(self, t):
+        return t
+        
+    @_(r'\bSome\b')
+    def SOME(self, t):
+        return t
+        
+    @_(r'\bNone\b')
+    def NONE(self, t):
+        return t
+        
+    @_(r'\bis_some\b')
+    def IS_SOME(self, t):
+        return t
+        
+    @_(r'\bis_none\b')
+    def IS_NONE(self, t):
+        return t
+        
+    @_(r'\bmatch\b')
+    def MATCH(self, t):
+        return t
+        
+    @_(r'[a-zA-Z_][a-zA-Z0-9_]*')
+    def IDENTIFIER(self, t):
+        return t
+        
+    @_(r'\d+')
+    def NUMBER(self, t):
+        t.value = int(t.value)
+        return t
+    
+    # 多字符运算符（必须在单字符运算符之前定义！）
+    @_(r'=>')
+    def FAT_ARROW(self, t):
+        return t
+        
+    @_(r'==')
+    def EQEQ(self, t):
+        return t
+        
+    @_(r'!=')
+    def NEQ(self, t):
+        return t
+    
+    # 单字符运算符
+    @_(r'=')
+    def EQ(self, t):
+        return t
+        
+    @_(r'\+')
+    def PLUS(self, t):
+        return t
+        
+    @_(r'-')
+    def MINUS(self, t):
+        return t
+        
+    @_(r'\*')
+    def TIMES(self, t):
+        return t
+        
+    @_(r'/')
+    def DIVIDE(self, t):
+        return t
+        
+    @_(r'\(')
+    def LPAREN(self, t):
+        return t
+        
+    @_(r'\)')
+    def RPAREN(self, t):
+        return t
+        
+    @_(r'\{')
+    def LBRACE(self, t):
+        return t
+        
+    @_(r'\}')
+    def RBRACE(self, t):
+        return t
+        
+    @_(r';')
+    def SEMI(self, t):
+        return t
+        
+    @_(r',')
+    def COMMA(self, t):
+        return t
+        
+    ignore = ' \t'
+    
+    @_(r'\n+')
+    def ignore_newline(self, t):
+        self.lineno += len(t.value)
+        
+    @_(r'//.*')
+    def ignore_comment(self, t):
+        pass
+        
+    def error(self, t):
+        print(f"词法错误：第 {self.lineno} 行，非法字符 '{t.value[0]}'")
+        self.index += 1
 
-if __name__ == "__main__":
-    test()
+# 测试
+if __name__ == '__main__':
+    lexer = RustLikeLexer()
+    code ='''let x = Some(5); 
+    let y = match x { Some(v) => v + 1, None => 0 };
+    '''
+    print("Tokens: ")
+    for tok in lexer.tokenize(code):
+        print(f"  {tok.type:10} {repr(tok.value):12} ( {tok.lineno})")

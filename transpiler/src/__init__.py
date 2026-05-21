@@ -5,17 +5,3 @@
 
 __author__ = "Gong Xi"
 __stuID__ = "24300240233"
-
-from .lexer import tokenize
-from .parser import parse
-from .semantic import analyze
-from .codegen import generate_c_code
-from .compiler import compile_source
-
-__all__ = [
-    'tokenize',
-    'parse',
-    'analyze',
-    'generate_c_code',
-    'compile_source'
-]
