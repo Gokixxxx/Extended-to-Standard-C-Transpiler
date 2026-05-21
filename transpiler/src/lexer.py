@@ -1,5 +1,5 @@
 """
-Rust 词法分析器 - 正确实现
+词法分析器
 """
 import ply.lex as lex
 
@@ -16,7 +16,7 @@ tokens = (
     'PLUS', 'MINUS', 'TIMES', 'DIVIDE',
     'EQUALS', 'NEQUALS', 'LESS', 'GREATER', 'LESSEQUAL', 'GREATEREQUAL',
     'ASSIGN',
-    'AMPERSAND',  # & 符号
+    'AMPERSAND',
 )
 
 # 关键字映射
@@ -42,7 +42,7 @@ reserved = {
     'type': 'TYPE',
 }
 
-# 简单的 token 规则（不包含 #）
+# 简单的 token 规则
 t_LPAREN    = r'\('
 t_RPAREN    = r'\)'
 t_LBRACE    = r'\{'
