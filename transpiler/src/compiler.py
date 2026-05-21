@@ -1,99 +1,142 @@
 """
-主编译器入口 - 编译流程控制
+主编译器入口
+集成词法分析、语法分析、语义分析和代码生成
 """
 
-import sys
-import argparse
-from typing import Optional
-from src import tokenize, parse, analyze, generate_c_code
-from src.utils import FileHelper
+from .lexer import RustLikeLexer
+from .parser import RustLikeParser
+from .semantic import SemanticAnalyzer
+from .codegen import CCodeGenerator
+
 
 class Compiler:
-    """编译器主类"""
-    
     def __init__(self):
-        """初始化编译器"""
-        self.source_code: Optional[str] = None
-        self.output_file: Optional[str] = None
+        """初始化编译器各组件"""
+        self.lexer = RustLikeLexer()
+        self.parser = RustLikeParser()
+        self.analyzer = SemanticAnalyzer()
+        self.codegen = CCodeGenerator()
     
-    def compile_source(self, source_code: str) -> str:
-        """主编译函数
+    def compile(self, source_code: str) -> str:
+        """
+        端到端编译：Rust-like 源码 → C 代码
         
         Args:
-            source_code: 源代码字符串
+            source_code: 输入的 Rust-like 源代码字符串
             
         Returns:
-            生成的C代码字符串
-        """
-        pass
-    
-    def compile_file(self, input_file: str, output_file: Optional[str] = None) -> str:
-        """编译文件
-        
-        Args:
-            input_file: 输入文件路径
-            output_file: 输出文件路径
+            生成的 C 代码字符串
             
-        Returns:
-            生成的C代码字符串
+        Raises:
+            RuntimeError: 编译过程中出现错误
         """
-        pass
-    
-    def load_source_file(self, filename: str) -> str:
-        """加载源文件
-        
-        Args:
-            filename: 文件名
+        try:
+            # 阶段1: 词法分析
+            tokens = self.lexer.tokenize(source_code)
             
-        Returns:
-            文件内容
-        """
-        pass
-    
-    def save_output_file(self, code: str, filename: str):
-        """保存输出文件
-        
-        Args:
-            code: C代码字符串
-            filename: 输出文件名
-        """
-        pass
-    
-    def run(self, input_file: str, output_file: Optional[str] = None):
-        """运行编译流程
-        
-        Args:
-            input_file: 输入文件路径
-            output_file: 输出文件路径
-        """
-        pass
+            # 阶段2: 语法分析
+            ast = self.parser.parse(tokens)
+            
+            # 阶段3: 语义分析
+            if not self.analyzer.analyze(ast):
+                self.analyzer.print_errors()
+                raise RuntimeError("Semantic analysis failed")
+            
+            # 阶段4: 代码生成
+            c_code = self.codegen.generate(ast)
+            return c_code
+            
+        except Exception as e:
+            # 重新抛出带上下文的错误信息
+            raise RuntimeError(f"Compilation failed: {str(e)}")
 
-def compile_source(source_code: str) -> str:
-    """编译源代码的便捷函数
+
+def test_compiler():
+    """内嵌端到端编译器测试"""
+    print("=== 端到端编译器测试 ===")
     
-    Args:
-        source_code: 源代码字符串
-        
-    Returns:
-        生成的C代码字符串
+    # 测试用例1: 基本整数操作
+    print("测试 1 - 基本整数:")
+    source1 = "let x = 42;"
+    compiler1 = Compiler()
+    try:
+        c_code1 = compiler1.compile(source1)
+        print(c_code1)
+    except Exception as e:
+        print(f"错误: {e}")
+    print()
+    
+    # 测试用例2: Option 类型
+    print("测试 2 - Option 类型:")
+    source2 = "let opt = Some(5);"
+    compiler2 = Compiler()
+    try:
+        c_code2 = compiler2.compile(source2)
+        print(c_code2)
+    except Exception as e:
+        print(f"错误: {e}")
+    print()
+    
+    # 测试用例3: Match 表达式（完整端到端）
+    print("测试 3 - Match 表达式（端到端）:")
+    source3 = """
+    let x = Some(5);
+    let y = match x {
+        Some(v) => v + 1,
+        None => 0
+    };
     """
-    compiler = Compiler()
-    return compiler.compile_source(source_code)
+    compiler3 = Compiler()
+    try:
+        c_code3 = compiler3.compile(source3)
+        print(c_code3)
+    except Exception as e:
+        print(f"错误: {e}")
+    print()
+    
+    # 测试用例4: 复杂表达式
+    print("测试 4 - 复杂表达式:")
+    source4 = """
+    let a = 10;
+    let b = Some(20);
+    let result = match b {
+        Some(val) => a + val * 2,
+        None => a
+    };
+    """
+    compiler4 = Compiler()
+    try:
+        c_code4 = compiler4.compile(source4)
+        print(c_code4)
+    except Exception as e:
+        print(f"错误: {e}")
+    print()
+
 
 def main():
-    """命令行入口函数"""
-    parser = argparse.ArgumentParser(
-        description="Modern Language to C Compiler"
-    )
-    parser.add_argument('input', help='Input source file')
-    parser.add_argument('-o', '--output', help='Output C file')
-    parser.add_argument('-v', '--verbose', action='store_true', 
-                       help='Enable verbose output')
+    """命令行接口"""
+    import sys
     
-    args = parser.parse_args()
+    if len(sys.argv) != 2:
+        print("argv is not equal to 2")
+        return
     
+    source_code = sys.argv[1]
     compiler = Compiler()
-    compiler.run(args.input, args.output)
+    
+    try:
+        c_code = compiler.compile(source_code)
+        print(c_code)
+    except Exception as e:
+        print(f"编译错误: {e}", file=sys.stderr)
+        sys.exit(1)
+
 
 if __name__ == '__main__':
-    main()
+    import sys
+    if len(sys.argv) == 1:
+        # 运行内嵌测试
+        test_compiler()
+    else:
+        # 命令行模式
+        main()
