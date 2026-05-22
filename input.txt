@@ -1,14 +1,6 @@
-fn add(a, b) {
-    return a + b;
-}
-
-fn make_some(x) {
-    return Some(x);
-}
-
-let x = add(1, 2);
-let y = make_some(10);
-let z = match y {
-    Some(v) => v + 1,
-    None => 0
-};
+let v = [1, 2, 3];
+v.push(16);
+let k = v[1];
+let n = v.len();
+let p = v.pop();
+v.remove(0);

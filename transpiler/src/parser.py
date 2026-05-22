@@ -128,6 +128,36 @@ class RustLikeParser(Parser):
     def factor(self, p):
         return p.primary
     
+    # ==================== 数组字面量 ====================
+    @_('LBRACKET expr_list RBRACKET')
+    def primary(self, p):
+        return ('vec_literal', p.expr_list)
+    
+    @_('LBRACKET RBRACKET')
+    def primary(self, p):
+        return ('vec_literal', [])
+    
+    @_('expr')
+    def expr_list(self, p):
+        return [p.expr]
+    
+    @_('expr_list COMMA expr')
+    def expr_list(self, p):
+        return p.expr_list + [p.expr]
+    
+    # ==================== 索引访问 & 方法调用 ====================
+    @_('primary LBRACKET expr RBRACKET')
+    def primary(self, p):
+        return ('index', p.primary, p.expr)
+    
+    @_('primary DOT IDENTIFIER LPAREN arg_list RPAREN')
+    def primary(self, p):
+        return ('method_call', p.primary, p.IDENTIFIER, p.arg_list)
+    
+    @_('primary DOT IDENTIFIER LPAREN RPAREN')
+    def primary(self, p):
+        return ('method_call', p.primary, p.IDENTIFIER, [])
+    
     # ==================== 函数调用（作为 primary 的一种）====================
     @_('primary LPAREN arg_list RPAREN')
     def primary(self, p):
@@ -201,10 +231,10 @@ if __name__ == '__main__':
     parser = RustLikeParser()
     
     code ='''
-    fn add(a, b) {
-        return a + b;
-    }
-    let x = add(1, 2);
+    let v = [1, 2, 3];
+    v.push(16);
+    let k = v[1];
+    let n = v.len();
     '''
     
     print("Parsing code:")

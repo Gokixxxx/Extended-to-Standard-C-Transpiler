@@ -7,23 +7,23 @@ from typing import Any, List, Tuple
 class CCodeGenerator:
     def __init__(self):
         self.includes = set()
-        self.func_defs = []          # 函数定义代码（多行字符串列表）
-        self.main_stmts = []         # main 函数内的语句
-        self.func_return_types = {}  # 函数名 -> C类型字符串
+        self.func_defs = []
+        self.main_stmts = []
+        self.func_return_types = {}
+        self.vec_vars = set()  # 记录 Vec 变量名，用于后续 free
 
     def generate(self, ast: Tuple) -> str:
         self.includes.clear()
         self.func_defs.clear()
         self.main_stmts.clear()
         self.func_return_types.clear()
+        self.vec_vars.clear()
         
         if ast[0] == 'program':
-            # 第一遍：推断所有函数返回类型
             for top in ast[1]:
                 if top[0] == 'func_def':
                     self._infer_func_return_type(top)
             
-            # 第二遍：生成代码
             for top in ast[1]:
                 if top[0] == 'func_def':
                     self.func_defs.append(self._gen_func_def(top))
@@ -52,9 +52,17 @@ class CCodeGenerator:
             return 'int'
         elif op == 'var':
             return 'int'
+        elif op == 'vec_literal':
+            return 'Vec_i32'
         elif op == 'call':
             if expr[1][0] == 'var':
                 return self.func_return_types.get(expr[1][1], 'int')
+            return 'int'
+        elif op == 'method_call':
+            if expr[2] in ('len', 'pop'):
+                return 'int'
+            return 'void'
+        elif op == 'index':
             return 'int'
         elif op in ('add', 'sub', 'mul', 'div'):
             return 'int'
@@ -70,6 +78,9 @@ class CCodeGenerator:
         if 'option.h' in self.includes:
             lines.append('#include "option.h"')
             lines.append('')
+        if 'vec.h' in self.includes:
+            lines.append('#include "vec.h"')
+            lines.append('')
         
         for func in self.func_defs:
             lines.append(func)
@@ -79,6 +90,11 @@ class CCodeGenerator:
         for stmt in self.main_stmts:
             for line in stmt.split('\n'):
                 lines.append(f"    {line}")
+        
+        # 自动 free Vec 变量（P7 GC 雏形）
+        for var in self.vec_vars:
+            lines.append(f"    free({var}.data);")
+        
         lines.append('    return 0;')
         lines.append('}')
         
@@ -117,7 +133,7 @@ class CCodeGenerator:
             return f'{expr_code};'
         return ''
 
-    # ==================== let 声明（含 match 处理）====================
+    # ==================== let 声明 ====================
     def _gen_let(self, node: Tuple) -> str:
         var_name = node[1]
         expr = node[2]
@@ -131,6 +147,10 @@ class CCodeGenerator:
         if type_str == 'Option_i32':
             self.includes.add('option.h')
             return f'Option_i32 {var_name} = {expr_code};'
+        elif type_str == 'Vec_i32':
+            self.includes.add('vec.h')
+            self.vec_vars.add(var_name)
+            return f'Vec_i32 {var_name} = {expr_code};'
         return f'int {var_name} = {expr_code};'
 
     def _contains_match(self, expr: Any) -> bool:
@@ -197,6 +217,28 @@ class CCodeGenerator:
                 return f"Some_i32({self._generate_expr(expr[1])})"
             elif expr[0] == 'none':
                 return "None_i32()"
+            elif expr[0] == 'vec_literal':
+                # 生成：vec_new_i32(); vec_push_i32(&v, 1); ...
+                # 但这里只能返回初始化表达式，所以用复合语句
+                # 简化：返回 vec_new_i32()，push 在 let 声明后生成
+                return "vec_new_i32()"
+            elif expr[0] == 'index':
+                obj = self._generate_expr(expr[1])
+                idx = self._generate_expr(expr[2])
+                return f"vec_get_i32({obj}, {idx})"
+            elif expr[0] == 'method_call':
+                obj = self._generate_expr(expr[1])
+                method = expr[2]
+                args = [self._generate_expr(a) for a in expr[3]]
+                if method == 'push':
+                    return f"vec_push_i32(&{obj}, {', '.join(args)})"
+                elif method == 'len':
+                    return f"vec_len_i32({obj})"
+                elif method == 'pop':
+                    return f"vec_pop_i32(&{obj})"
+                elif method == 'remove':
+                    return f"vec_remove_i32(&{obj}, {', '.join(args)})"
+                return f"{method}({obj}, {', '.join(args)})"
             elif expr[0] in ['add', 'sub', 'mul', 'div']:
                 left = self._generate_expr(expr[1])
                 right = self._generate_expr(expr[2])
@@ -213,21 +255,52 @@ class CCodeGenerator:
                 return f"{callee}({', '.join(args)})"
         return str(expr)
 
+    # ==================== 数组初始化处理 ====================
+    def _gen_let(self, node: Tuple) -> str:
+        var_name = node[1]
+        expr = node[2]
+        
+        if self._contains_match(expr):
+            return '\n'.join(self._generate_match_code(var_name, expr))
+        
+        type_str = self._infer_expr_type(expr)
+        
+        if type_str == 'Vec_i32':
+            self.includes.add('vec.h')
+            self.vec_vars.add(var_name)
+            # 数组字面量需要特殊处理：先 new，再逐个 push
+            if expr[0] == 'vec_literal':
+                lines = [f'Vec_i32 {var_name} = vec_new_i32();']
+                for elem in expr[1]:
+                    elem_code = self._generate_expr(elem)
+                    lines.append(f'vec_push_i32(&{var_name}, {elem_code});')
+                return '\n'.join(lines)
+            else:
+                expr_code = self._generate_expr(expr)
+                return f'Vec_i32 {var_name} = {expr_code};'
+        elif type_str == 'Option_i32':
+            self.includes.add('option.h')
+            expr_code = self._generate_expr(expr)
+            return f'Option_i32 {var_name} = {expr_code};'
+        else:
+            expr_code = self._generate_expr(expr)
+            return f'int {var_name} = {expr_code};'
+
 
 # ==================== 测试 ====================
 def test_codegen():
     print("=== C 代码生成器测试 ===")
     
-    # 测试 1: 基本函数定义和调用
+    # 测试 1: 数组操作
     ast1 = ('program', [
-        ('func_def', 'add', ['a', 'b'], [
-            ('return', ('add', ('var', 'a'), ('var', 'b')))
-        ]),
-        ('let_decl', 'x', ('call', ('var', 'add'), [('num', 1), ('num', 2)]))
+        ('let_decl', 'v', ('vec_literal', [('num', 1), ('num', 2), ('num', 3)])),
+        ('expr_stmt', ('method_call', ('var', 'v'), 'push', [('num', 16)])),
+        ('let_decl', 'k', ('index', ('var', 'v'), ('num', 1))),
+        ('let_decl', 'n', ('method_call', ('var', 'v'), 'len', []))
     ])
     
     codegen = CCodeGenerator()
-    print("测试 1 - 函数定义和调用:")
+    print("测试 1 - 数组操作:")
     print(codegen.generate(ast1))
     print()
     

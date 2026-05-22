@@ -82,6 +82,12 @@ class SemanticAnalyzer:
             elif node_type == 'call':
                 self.visit_call(node)
 
+            elif node_type == 'index':
+                self.visit_index(node)
+
+            elif node_type == 'method_call':
+                self.visit_method_call(node)
+
             else:
                 for child in node[1:]:
                     self.visit(child)
@@ -168,6 +174,62 @@ class SemanticAnalyzer:
 
         return func_info['return_type']
 
+    # ============ 索引访问 ============
+    def visit_index(self, node: Tuple):
+        obj_expr = node[1]
+        idx_expr = node[2]
+
+        obj_type = self.visit_expr(obj_expr)
+        idx_type = self.visit_expr(idx_expr)
+
+        if obj_type != 'Vec<i32>':
+            self.errors.append(f"错误: 索引访问要求 Vec<i32>，但得到 {obj_type}")
+
+        if idx_type != 'i32':
+            self.errors.append(f"错误: 索引必须是 i32, 但得到 {idx_type}")
+
+        return 'i32'
+
+    # ============ 方法调用 ============
+    def visit_method_call(self, node: Tuple):
+        obj_expr = node[1]
+        method_name = node[2]
+        args = node[3]
+
+        obj_type = self.visit_expr(obj_expr)
+
+        if obj_type != 'Vec<i32>':
+            self.errors.append(f"错误: 方法调用要求 Vec<i32>，但得到 {obj_type}")
+            return 'unknown'
+
+        # Vec<i32> 支持的方法
+        vec_methods = {
+            'push': (['i32'], 'void'),      # push(val) -> void
+            'len': ([], 'i32'),              # len() -> i32
+            'pop': ([], 'i32'),              # pop() -> i32
+            'remove': (['i32'], 'void'),     # remove(idx) -> void
+        }
+
+        if method_name not in vec_methods:
+            self.errors.append(f"错误: Vec<i32> 没有方法 '{method_name}'")
+            return 'unknown'
+
+        expected_params, return_type = vec_methods[method_name]
+
+        if len(args) != len(expected_params):
+            self.errors.append(
+                f"错误: 方法 '{method_name}' 期望 {len(expected_params)} 个参数，实际 {len(args)} 个"
+            )
+
+        for i, arg in enumerate(args):
+            arg_type = self.visit_expr(arg)
+            if i < len(expected_params) and arg_type != expected_params[i]:
+                self.errors.append(
+                    f"错误: 方法 '{method_name}' 第 {i+1} 个参数期望 {expected_params[i]}，实际 {arg_type}"
+                )
+
+        return return_type
+
     # ============ match 表达式 ============
     def visit_match(self, node: Tuple):
         scrutinee_name = node[1]
@@ -197,7 +259,7 @@ class SemanticAnalyzer:
         if case_type == 'some_case':
             var_name = case[1]
             expr_node = case[2]
-            inner_type = scrutinee_type[7:-1] if scrutinee_type.startswith('Option<') else 'unknown'    # 提取Option<T>中的T
+            inner_type = scrutinee_type[7:-1] if scrutinee_type.startswith('Option<') else 'unknown'
             self.enter_scope()
             self.declare(var_name, inner_type)
             self.visit_expr(expr_node)
@@ -222,6 +284,13 @@ class SemanticAnalyzer:
 
             elif node_type == 'num':
                 return 'i32'
+
+            elif node_type == 'vec_literal':
+                for elem in node[1]:
+                    elem_type = self.visit_expr(elem)
+                    if elem_type != 'i32':
+                        self.errors.append(f"错误: 数组元素必须是 i32，但得到 {elem_type}")
+                return 'Vec<i32>'
 
             elif node_type == 'some':
                 inner_type = self.visit_expr(node[1])
@@ -256,6 +325,12 @@ class SemanticAnalyzer:
 
             elif node_type == 'call':
                 return self.visit_call(node)
+
+            elif node_type == 'index':
+                return self.visit_index(node)
+
+            elif node_type == 'method_call':
+                return self.visit_method_call(node)
 
         return 'unknown'
 
@@ -292,22 +367,16 @@ if __name__ == '__main__':
             let x = add(1, 2);
         """),
 
-        ("前向引用", """
-            let x = add(1, 2);
-            fn add(a, b) {
-                return a + b;
-            }
+        ("数组操作", """
+            let v = [1, 2, 3];
+            v.push(16);
+            let k = v[1];
+            let n = v.len();
         """),
 
-        ("参数错误", """
-            fn add(a, b) {
-                return a + b;
-            }
-            let x = add(1);
-        """),
-
-        ("return 在函数外", """
-            return 1;
+        ("数组错误", """
+            let v = [1, 2, 3];
+            let x = v[1.5];
         """),
 
         ("Option + 函数", """

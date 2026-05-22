@@ -11,6 +11,7 @@ class RustLikeLexer(Lexer):
               'EQ', 'PLUS', 'MINUS', 'TIMES', 'DIVIDE',
               'EQEQ', 'NEQ', 'GT', 'LT', 'GTE', 'LTE',
               'LPAREN', 'RPAREN', 'LBRACE', 'RBRACE',
+              'LBRACKET', 'RBRACKET', 'DOT',
               'SEMI', 'COMMA', 'FAT_ARROW'}
     
     @_(r'\blet\b')
@@ -118,6 +119,18 @@ class RustLikeLexer(Lexer):
     def RBRACE(self, t):
         return t
         
+    @_(r'\[')
+    def LBRACKET(self, t):
+        return t
+        
+    @_(r'\]')
+    def RBRACKET(self, t):
+        return t
+        
+    @_(r'\.')
+    def DOT(self, t):
+        return t
+        
     @_(r';')
     def SEMI(self, t):
         return t
@@ -141,13 +154,12 @@ class RustLikeLexer(Lexer):
         self.index += 1
 
 if __name__ == '__main__':
-    # 内嵌测试
     lexer = RustLikeLexer()
     code ='''
-    fn add(a, b) {
-        return a + b;
-    }
-    let x = add(1, 2);
+    let v = [1, 2, 3];
+    v.push(16);
+    let k = v[1];
+    let n = v.len();
     '''
     print("Tokens: ")
     for tok in lexer.tokenize(code):
