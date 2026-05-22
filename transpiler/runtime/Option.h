@@ -39,7 +39,7 @@ static inline bool unwrap_i32(Option_i32 opt, int *out) {
 }
 
 // 如果是 Some 返回值，否则返回默认值 default_val
-static inline int unwrap_or_i32(Option_i32 opt, int default_val=0) {
+static inline int unwrap_or_i32(Option_i32 opt, int default_val) {
     return opt.is_some ? opt.value : default_val;
 }
 
