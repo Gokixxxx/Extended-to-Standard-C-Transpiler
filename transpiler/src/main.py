@@ -15,7 +15,7 @@ except ImportError:
 
 def main():
     input_file = "input.txt"
-    output_file = "output.txt"
+    output_file = "output.c"
     
     if len(sys.argv) >= 2:
         input_file = sys.argv[1]
