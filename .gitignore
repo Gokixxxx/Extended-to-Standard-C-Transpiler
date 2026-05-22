@@ -66,3 +66,6 @@ EOF
 *.docx
 *.doc
 *.pdf
+
+# instuctor
+instructor.md
