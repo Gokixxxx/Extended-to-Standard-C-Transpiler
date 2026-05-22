@@ -6,17 +6,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* ============================================================
- * Option<i32> 结构体
- * ============================================================ */
+// Option<i32> 结构体，仅支持int
 typedef struct {
     bool is_some;   // true: Some, false: None
     int  value;     // 仅当 is_some == true 时有效
 } Option_i32;
 
-/* ============================================================
- * 构造器
- * ============================================================ */
 static inline Option_i32 Some_i32(int val) {
     return (Option_i32){true, val};
 }
@@ -25,9 +20,6 @@ static inline Option_i32 None_i32(void) {
     return (Option_i32){false, 0};
 }
 
-/* ============================================================
- * 判定函数（项目文档明确要求）
- * ============================================================ */
 static inline bool is_some(Option_i32 opt) {
     return opt.is_some;
 }
@@ -36,10 +28,7 @@ static inline bool is_none(Option_i32 opt) {
     return !opt.is_some;
 }
 
-/* ============================================================
- * 安全取值辅助函数（方便代码生成与测试）
- * ============================================================ */
-
+// 安全取值
 // 如果是 Some，通过 out 指针输出值并返回 true；否则返回 false
 static inline bool unwrap_i32(Option_i32 opt, int *out) {
     if (opt.is_some) {
@@ -50,11 +39,11 @@ static inline bool unwrap_i32(Option_i32 opt, int *out) {
 }
 
 // 如果是 Some 返回值，否则返回默认值 default_val
-static inline int unwrap_or_i32(Option_i32 opt, int default_val) {
+static inline int unwrap_or_i32(Option_i32 opt, int default_val=0) {
     return opt.is_some ? opt.value : default_val;
 }
 
-// 如果是 Some 返回值，否则打印错误信息并终止程序（运行时越界等场景可用）
+// 如果是 Some 返回值，否则打印错误信息并终止程序
 static inline int expect_i32(Option_i32 opt, const char *msg) {
     if (!opt.is_some) {
         fprintf(stderr, "panic: %s\n", msg ? msg : "called `expect` on a `None` value");
