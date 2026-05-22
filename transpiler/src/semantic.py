@@ -20,7 +20,7 @@ class SemanticAnalyzer:
     
     # ============ 作用域管理 ============
     def enter_scope(self):
-        """进入新作用域（如 match 分支）"""
+        """进入新作用域"""
         self.symbol_table.append({})
     
     def exit_scope(self):
@@ -86,7 +86,7 @@ class SemanticAnalyzer:
     
     # ============ 具体节点处理 ============
     def visit_let_decl(self, node: Tuple):
-        """处理 let 声明：let x = expr;"""
+        """处理 let 声明"""
         var_name = node[1]
         expr_node = node[2]
         
@@ -104,14 +104,12 @@ class SemanticAnalyzer:
         # 查找被匹配的变量
         scrutinee_type = self.lookup(scrutinee_name)
         if scrutinee_type is None:
-            self.errors.append(f"错误: 未声明的变量 '{scrutinee_name}'")
+            self.errors.append(f"Error: undeclared variables '{scrutinee_name}'")
             return
         
         # 检查是否为 Option 类型
         if not scrutinee_type.startswith('Option<'):
-            self.errors.append(
-                f"错误: match 表达式必须作用于 Option 类型，但 '{scrutinee_name}' 是 {scrutinee_type}"
-            )
+            self.errors.append(f"Error: match requires Option, but '{scrutinee_name}' is {scrutinee_type}")
             return
         
         # 检查分支是否穷尽
@@ -119,7 +117,7 @@ class SemanticAnalyzer:
         has_none = any(c[0] == 'none_case' for c in cases)
         
         if not (has_some and has_none):
-            self.errors.append("错误: match 表达式必须同时包含 Some 和 None 分支")
+            self.errors.append("Error: The match expression must contain both Some and None branches.")
         
         # 分析每个分支
         for case in cases:
@@ -158,7 +156,7 @@ class SemanticAnalyzer:
                 name = node[1]
                 t = self.lookup(name)
                 if t is None:
-                    self.errors.append(f"错误: 使用未声明的变量 '{name}'")
+                    self.errors.append(f"Error: undeclared variables '{name}'")
                     return 'unknown'
                 return t
             
@@ -181,9 +179,7 @@ class SemanticAnalyzer:
                 right_type = self.visit_expr(node[2])
                 
                 if left_type != 'i32' or right_type != 'i32':
-                    self.errors.append(
-                        f"错误: 不能对 {left_type} 和 {right_type} 执行算术运算"
-                    )
+                    self.errors.append(f"Error: Can not calculate between {left_type} and {right_type} ")
                 return 'i32'
             
             elif node_type in ['eq', 'neq']:
@@ -192,25 +188,21 @@ class SemanticAnalyzer:
                 right_type = self.visit_expr(node[2])
                 
                 if left_type != right_type:
-                    self.warnings.append(
-                        f"警告: 比较不同类型的值 {left_type} 和 {right_type}"
-                    )
+                    self.warnings.append(f"Warning: compare between {left_type} and {right_type}")
                 return 'bool'
             
             elif node_type == 'is_some' or node_type == 'is_none':
                 # is_some / is_none
                 expr_type = self.visit_expr(node[1])
                 if not expr_type.startswith('Option<'):
-                    self.errors.append(
-                        f"错误: {node_type} 只能用于 Option 类型，但得到 {expr_type}"
-                    )
+                    self.errors.append(f"Error: {node_type} can only act on Option, but get {expr_type}")
                 return 'bool'
             
             elif node_type == 'match':
                 # match 表达式
                 self.visit_match(node)
-                # 返回分支表达式的类型（简化：假设所有分支类型一致）
-                return 'i32'  # TODO: 实际应检查所有分支类型是否一致
+                # 返回分支表达式的类型
+                return 'i32'
         
         return 'unknown'
     
@@ -222,18 +214,16 @@ class SemanticAnalyzer:
         
         left_type = self.visit_expr(left)
         right_type = self.visit_expr(right)
-        
-        # 类型检查已在 visit_expr 中完成
     
     def visit_type_test(self, node: Tuple):
-        """处理类型测试（is_some / is_none）"""
+        """处理类型测试"""
         expr = node[1]
         expr_type = self.visit_expr(expr)
         
         if not expr_type.startswith('Option<'):
             op_name = 'is_some' if node[0] == 'is_some' else 'is_none'
             self.errors.append(
-                f"错误: {op_name} 只能用于 Option 类型，但得到 {expr_type}"
+                f"Error: {op_name} can only act on Option, but get {expr_type}"
             )
     
     # ============ 错误报告 ============
@@ -256,7 +246,7 @@ class SemanticAnalyzer:
 if __name__ == '__main__':
     from .lexer import RustLikeLexer
     
-    # 测试代码
+    # 内嵌测试
     test_cases = [
         # 有效代码
         ("有效代码", """

@@ -9,7 +9,6 @@ _: Any
 class RustLikeParser(Parser):
     tokens = RustLikeLexer.tokens
     
-    # 起始符号
     start = 'program'
     
     # ==================== 程序结构 ====================

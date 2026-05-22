@@ -1,6 +1,5 @@
 """
-C 代码生成器
-将经过语义分析的 AST 转换为 C 代码
+C代码生成器
 """
 
 from typing import Any, List, Tuple, Optional
@@ -12,31 +11,26 @@ class CCodeGenerator:
         self.indent_level = 0
     
     def generate(self, ast: Tuple) -> str:
-        """主入口：生成完整 C 程序"""
-        # 清理状态
+        """入口"""
         self.includes.clear()
         self.statements.clear()
         
-        # 处理 AST
         if ast[0] == 'program':
             for stmt in ast[1]:
                 self.visit_stmt(stmt)
         
-        # 生成完整程序
         return self._build_program()
     
     def _build_program(self) -> str:
         """构建完整的 C 程序"""
         lines = []
         
-        # includes
         if 'option.h' in self.includes:
             lines.append('#include "option.h"')
             lines.append('')
         
         lines.append('int main() {')
         
-        # 语句
         for stmt in self.statements:
             lines.append(f"    {stmt}")
         
@@ -51,9 +45,8 @@ class CCodeGenerator:
             var_name = stmt[1]
             expr_node = stmt[2]
             
-            # 检查表达式是否包含 match
             if self._contains_match(expr_node):
-                # 特殊处理包含 match 的 let 声明
+                # 处理包含 match 的 let 声明
                 self._handle_let_with_match(var_name, expr_node)
             else:
                 # 普通表达式处理
@@ -65,7 +58,7 @@ class CCodeGenerator:
                     self.statements.append(f"int {var_name} = {expr_code};")
     
     def _contains_match(self, expr: Any) -> bool:
-        """检查表达式是否包含 match 节点"""
+        """检查表达式是否包含match"""
         if isinstance(expr, tuple):
             if expr[0] == 'match':
                 return True
@@ -75,18 +68,18 @@ class CCodeGenerator:
         return False
     
     def _handle_let_with_match(self, var_name: str, expr: Any):
-        """处理包含 match 的 let 声明"""
+        """处理包含match的let声明"""
         if isinstance(expr, tuple) and expr[0] == 'match':
-            # 直接处理 match 表达式
+            # 直接处理match表达式
             self._generate_match_assignment(var_name, expr)
         elif isinstance(expr, tuple) and expr[0] in ['add', 'sub', 'mul', 'div']:
-            # 处理包含 match 的二元操作
+            # 处理包含match的二元操作
             if self._contains_match(expr[1]):
                 temp_var1 = f"__temp1_{len(self.statements)}"
                 self._handle_let_with_match(temp_var1, expr[1])
                 right_code = self._generate_simple_expr(expr[2])
                 op_map = {'add': '+', 'sub': '-', 'mul': '*', 'div': '/'}
-                result_type = "int"  # match 表达式结果总是 int
+                result_type = "int"
                 self.statements.append(f"{result_type} {var_name} = {temp_var1} {op_map[expr[0]]} {right_code};")
             elif self._contains_match(expr[2]):
                 temp_var2 = f"__temp2_{len(self.statements)}"
@@ -101,14 +94,15 @@ class CCodeGenerator:
             self.statements.append(f"int {var_name} = {expr_code};")
     
     def _generate_match_assignment(self, var_name: str, match_node: Tuple):
-        """生成 match 表达式的赋值语句"""
+        """
+        生成match表达式的赋值语句
+        使用 if-else 实现
+        """
         scrutinee = match_node[1]
         cases = match_node[2]
         
-        # 先声明结果变量（match 结果总是 int 类型）
         self.statements.append(f"int {var_name};")
         
-        # 找到 Some 和 None 分支
         some_case = None
         none_case = None
         
@@ -120,11 +114,9 @@ class CCodeGenerator:
             elif case[0] == 'none_case':
                 none_case = case[1]
         
-        # 生成 if-else 结构
         self.statements.append(f"if ({scrutinee}.is_some) {{")
         if some_case:
             inner_var, body = some_case
-            # 生成 Some 分支的代码
             body_code = self._generate_expr_in_match(body, inner_var, f"{scrutinee}.value")
             self.statements.append(f"    {var_name} = {body_code};")
         self.statements.append("} else {")
@@ -134,7 +126,7 @@ class CCodeGenerator:
         self.statements.append("}")
     
     def _generate_expr_in_match(self, expr: Any, match_var: str, replacement: str) -> str:
-        """在 match 表达式的上下文中生成表达式代码"""
+        """在match表达式的上下文中生成表达式代码"""
         if isinstance(expr, tuple):
             if expr[0] == 'var':
                 if expr[1] == match_var:
@@ -153,7 +145,7 @@ class CCodeGenerator:
         return str(expr)
     
     def _generate_simple_expr(self, expr: Any) -> str:
-        """生成不包含 match 的简单表达式"""
+        """生成不包含match的简单表达式"""
         if isinstance(expr, int):
             return str(expr)
         elif isinstance(expr, tuple):
@@ -174,7 +166,7 @@ class CCodeGenerator:
         return str(expr)
     
     def _is_option_expr(self, expr: Any) -> bool:
-        """判断表达式是否为 Option 类型"""
+        """判断表达式是否为Option类型"""
         if isinstance(expr, tuple):
             if expr[0] == 'some' or expr[0] == 'none':
                 return True
@@ -182,8 +174,7 @@ class CCodeGenerator:
 
 
 def test_codegen():
-    """内嵌测试函数"""
-    print("=== C 代码生成器测试 ===")
+    # 内嵌测试
     
     # 测试用例 1: 基本变量声明
     ast1 = ('program', [

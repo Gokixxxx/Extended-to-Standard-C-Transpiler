@@ -1,6 +1,5 @@
 """
 主编译器入口
-集成词法分析、语法分析、语义分析和代码生成
 """
 
 from .lexer import RustLikeLexer
@@ -11,50 +10,33 @@ from .codegen import CCodeGenerator
 
 class Compiler:
     def __init__(self):
-        """初始化编译器各组件"""
         self.lexer = RustLikeLexer()
         self.parser = RustLikeParser()
         self.analyzer = SemanticAnalyzer()
         self.codegen = CCodeGenerator()
     
     def compile(self, source_code: str) -> str:
-        """
-        端到端编译：Rust-like 源码 → C 代码
-        
-        Args:
-            source_code: 输入的 Rust-like 源代码字符串
-            
-        Returns:
-            生成的 C 代码字符串
-            
-        Raises:
-            RuntimeError: 编译过程中出现错误
-        """
         try:
-            # 阶段1: 词法分析
+            # lexical analysis
             tokens = self.lexer.tokenize(source_code)
             
-            # 阶段2: 语法分析
+            # parse
             ast = self.parser.parse(tokens)
             
-            # 阶段3: 语义分析
+            # semantic analysis
             if not self.analyzer.analyze(ast):
                 self.analyzer.print_errors()
                 raise RuntimeError("Semantic analysis failed")
             
-            # 阶段4: 代码生成
+            # generate code
             c_code = self.codegen.generate(ast)
             return c_code
             
         except Exception as e:
-            # 重新抛出带上下文的错误信息
             raise RuntimeError(f"Compilation failed: {str(e)}")
 
 
 def test_compiler():
-    """内嵌端到端编译器测试"""
-    print("=== 端到端编译器测试 ===")
-    
     # 测试用例1: 基本整数操作
     print("测试 1 - 基本整数:")
     source1 = "let x = 42;"
@@ -128,7 +110,7 @@ def main():
         c_code = compiler.compile(source_code)
         print(c_code)
     except Exception as e:
-        print(f"编译错误: {e}", file=sys.stderr)
+        print(f"Compile Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 def compile_rustlike_to_c(source_code: str) -> str:
@@ -139,8 +121,8 @@ def compile_rustlike_to_c(source_code: str) -> str:
 if __name__ == '__main__':
     import sys
     if len(sys.argv) == 1:
-        # 运行内嵌测试
+        # 内嵌测试
         test_compiler()
     else:
-        # 命令行模式
+        # 命令行测试
         main()

@@ -4,13 +4,12 @@
 
 #include <stdbool.h>
 
-// Option<i32> 结构体
+// Option<i32> 结构体，支持整数类型
 typedef struct {
     bool is_some;
     int value;
 } Option_i32;
 
-// 构造函数
 static inline Option_i32 Some_i32(int val) {
     Option_i32 opt = {true, val};
     return opt;

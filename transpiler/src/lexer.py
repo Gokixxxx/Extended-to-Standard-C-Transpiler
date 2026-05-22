@@ -46,7 +46,6 @@ class RustLikeLexer(Lexer):
         t.value = int(t.value)
         return t
     
-    # 多字符运算符（必须在单字符运算符之前定义！）
     @_(r'=>')
     def FAT_ARROW(self, t):
         return t
@@ -59,7 +58,6 @@ class RustLikeLexer(Lexer):
     def NEQ(self, t):
         return t
     
-    # 单字符运算符
     @_(r'=')
     def EQ(self, t):
         return t
@@ -115,11 +113,11 @@ class RustLikeLexer(Lexer):
         pass
         
     def error(self, t):
-        print(f"词法错误：第 {self.lineno} 行，非法字符 '{t.value[0]}'")
+        print(f"lexical analysis error: line {self.lineno} , illegal value '{t.value[0]}'")
         self.index += 1
 
-# 测试
 if __name__ == '__main__':
+    # 内嵌测试
     lexer = RustLikeLexer()
     code ='''let x = Some(5); 
     let y = match x { Some(v) => v + 1, None => 0 };
