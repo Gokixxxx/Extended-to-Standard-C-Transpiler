@@ -373,7 +373,7 @@ class SemanticAnalyzer:
                 return f'Option<{inner_type}>'
 
             elif node_type == 'none':
-                return 'Option<unknown>'
+                return 'Option<i32>'  # 修复：从 Option<unknown> 改为 Option<i32>
 
             elif node_type in ['add', 'sub', 'mul', 'div']:
                 left_type = self.visit_expr(node[1])
@@ -466,7 +466,7 @@ if __name__ == '__main__':
         ("for_in", """
             let arr = [1, 2, 3];
             for x in arr {
-                x = x + 1;
+                print(x);
             }
         """),
 

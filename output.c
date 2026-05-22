@@ -1,26 +1,26 @@
-#include "vec.h"
+#include "option.h"
+
+Option_i32 find(int target) {
+    if ((target < 3)) {
+        return Some_i32(5);
+    }
+    return None_i32();
+}
 
 int main() {
-    Vec_i32 arr = vec_new_i32();
-    vec_push_i32(&arr, 1);
-    vec_push_i32(&arr, 3);
-    vec_push_i32(&arr, 5);
-    vec_push_i32(&arr, 2);
-    vec_push_i32(&arr, 4);
-    int max_val = 0;
-    {
-        int __t1 = 0;
-        for (; __t1 < vec_len_i32(arr); __t1++) {
-            int x = vec_get_i32(arr, __t1);
-            if ((x > max_val)) {
-                max_val = x;
-            }
-        }
+    Option_i32 result1 = find(3);
+    int val1;
+    if (result1.is_some) {
+        val1 = result1.value;
+    } else {
+        val1 = 0;
     }
-    int i = 0;
-    while ((i < 3)) {
-        i = (i + 1);
+    Option_i32 result2 = find(1);
+    int val2;
+    if (result2.is_some) {
+        val2 = result2.value;
+    } else {
+        val2 = 0;
     }
-    free(arr.data);
     return 0;
 }

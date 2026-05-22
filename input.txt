@@ -1,13 +1,18 @@
-let arr = [1, 3, 5, 2, 4];
-let max_val = 0;
-
-for x in arr {
-    if x > max_val {
-        max_val = x;
+fn find(target) {
+    if target < 3 {
+        return Some(5);
     }
+    return None;
 }
 
-let i = 0;
-while i < 3 {
-    i = i + 1;
-}
+let result1 = find(3);
+let val1 = match result1 {
+    Some(v) => v,
+    None => 0
+};
+
+let result2 = find(1);
+let val2 = match result2 {
+    Some(v) => v,
+    None => 0
+};
