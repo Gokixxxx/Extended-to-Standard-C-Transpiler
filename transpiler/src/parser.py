@@ -9,6 +9,15 @@ _: Any
 class RustLikeParser(Parser):
     tokens = RustLikeLexer.tokens
     
+    # 优先级声明：从低到高
+    precedence = (
+        ('right', 'EQ'),
+        ('left', 'EQEQ', 'NEQ'),
+        ('left', 'GT', 'LT', 'GTE', 'LTE'),
+        ('left', 'PLUS', 'MINUS'),
+        ('left', 'TIMES', 'DIVIDE'),
+    )
+    
     start = 'program'
     
     # ==================== 程序结构 ====================
@@ -71,7 +80,27 @@ class RustLikeParser(Parser):
     def statement(self, p):
         return ('expr_stmt', p.expr)
     
+    @_('IF expr LBRACE statements RBRACE')
+    def statement(self, p):
+        return ('if', p.expr, p.statements, [])
+    
+    @_('IF expr LBRACE statements RBRACE ELSE LBRACE statements RBRACE')
+    def statement(self, p):
+        return ('if', p.expr, p.statements0, p.statements1)
+    
+    @_('FOR IDENTIFIER IN expr LBRACE statements RBRACE')
+    def statement(self, p):
+        return ('for_in', p.IDENTIFIER, p.expr, p.statements)
+    
+    @_('WHILE expr LBRACE statements RBRACE')
+    def statement(self, p):
+        return ('while', p.expr, p.statements)
+    
     # ==================== 表达式 ====================
+    @_('IDENTIFIER EQ expr')
+    def expr(self, p):
+        return ('assign', p.IDENTIFIER, p.expr)
+    
     @_('match_expr')
     def expr(self, p):
         return p.match_expr
@@ -231,10 +260,17 @@ if __name__ == '__main__':
     parser = RustLikeParser()
     
     code ='''
-    let v = [1, 2, 3];
-    v.push(16);
-    let k = v[1];
-    let n = v.len();
+    if x > 0 {
+        return 1;
+    } else {
+        return 0;
+    }
+    for x in arr {
+        print(x);
+    }
+    while i < 10 {
+        i = i + 1;
+    }
     '''
     
     print("Parsing code:")

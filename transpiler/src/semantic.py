@@ -70,6 +70,15 @@ class SemanticAnalyzer:
             elif node_type == 'expr_stmt':
                 self.visit_expr(node[1])
 
+            elif node_type == 'if':
+                self.visit_if(node)
+
+            elif node_type == 'for_in':
+                self.visit_for_in(node)
+
+            elif node_type == 'while':
+                self.visit_while(node)
+
             elif node_type == 'match':
                 self.visit_match(node)
 
@@ -88,6 +97,9 @@ class SemanticAnalyzer:
             elif node_type == 'method_call':
                 self.visit_method_call(node)
 
+            elif node_type == 'assign':
+                self.visit_assign(node)
+
             else:
                 for child in node[1:]:
                     self.visit(child)
@@ -95,6 +107,71 @@ class SemanticAnalyzer:
         elif isinstance(node, list):
             for item in node:
                 self.visit(item)
+
+    # ============ 赋值 ============
+    def visit_assign(self, node: Tuple):
+        var_name = node[1]
+        expr_node = node[2]
+        
+        var_type = self.lookup(var_name)
+        if var_type is None:
+            self.errors.append(f"错误: 赋值前未声明变量 '{var_name}'")
+            return
+        
+        expr_type = self.visit_expr(expr_node)
+        if expr_type != var_type:
+            self.errors.append(f"错误: 不能将 {expr_type} 赋值给 {var_type} 类型的变量 '{var_name}'")
+
+    # ============ if ============
+    def visit_if(self, node: Tuple):
+        cond = node[1]
+        then_stmts = node[2]
+        else_stmts = node[3]
+        
+        cond_type = self.visit_expr(cond)
+        if cond_type != 'bool':
+            self.errors.append(f"错误: if 条件必须是 bool，但得到 {cond_type}")
+        
+        self.enter_scope()
+        for stmt in then_stmts:
+            self.visit(stmt)
+        self.exit_scope()
+        
+        if else_stmts:
+            self.enter_scope()
+            for stmt in else_stmts:
+                self.visit(stmt)
+            self.exit_scope()
+
+    # ============ for_in ============
+    def visit_for_in(self, node: Tuple):
+        var_name = node[1]
+        iterable = node[2]
+        body = node[3]
+        
+        iterable_type = self.visit_expr(iterable)
+        if iterable_type != 'Vec<i32>':
+            self.errors.append(f"错误: for 迭代对象必须是 Vec<i32>，但得到 {iterable_type}")
+        
+        self.enter_scope()
+        self.declare(var_name, 'i32')
+        for stmt in body:
+            self.visit(stmt)
+        self.exit_scope()
+
+    # ============ while ============
+    def visit_while(self, node: Tuple):
+        cond = node[1]
+        body = node[2]
+        
+        cond_type = self.visit_expr(cond)
+        if cond_type != 'bool':
+            self.errors.append(f"错误: while 条件必须是 bool，但得到 {cond_type}")
+        
+        self.enter_scope()
+        for stmt in body:
+            self.visit(stmt)
+        self.exit_scope()
 
     # ============ 函数定义 ============
     def visit_func_def(self, node: Tuple):
@@ -186,7 +263,7 @@ class SemanticAnalyzer:
             self.errors.append(f"错误: 索引访问要求 Vec<i32>，但得到 {obj_type}")
 
         if idx_type != 'i32':
-            self.errors.append(f"错误: 索引必须是 i32, 但得到 {idx_type}")
+            self.errors.append(f"错误: 索引必须是 i32，但得到 {idx_type}")
 
         return 'i32'
 
@@ -202,12 +279,11 @@ class SemanticAnalyzer:
             self.errors.append(f"错误: 方法调用要求 Vec<i32>，但得到 {obj_type}")
             return 'unknown'
 
-        # Vec<i32> 支持的方法
         vec_methods = {
-            'push': (['i32'], 'void'),      # push(val) -> void
-            'len': ([], 'i32'),              # len() -> i32
-            'pop': ([], 'i32'),              # pop() -> i32
-            'remove': (['i32'], 'void'),     # remove(idx) -> void
+            'push': (['i32'], 'void'),
+            'len': ([], 'i32'),
+            'pop': ([], 'i32'),
+            'remove': (['i32'], 'void'),
         }
 
         if method_name not in vec_methods:
@@ -332,6 +408,10 @@ class SemanticAnalyzer:
             elif node_type == 'method_call':
                 return self.visit_method_call(node)
 
+            elif node_type == 'assign':
+                self.visit_assign(node)
+                return 'void'
+
         return 'unknown'
 
     def visit_binary_op(self, node: Tuple):
@@ -374,9 +454,27 @@ if __name__ == '__main__':
             let n = v.len();
         """),
 
-        ("数组错误", """
-            let v = [1, 2, 3];
-            let x = v[1.5];
+        ("if/else", """
+            let x = 5;
+            if x > 0 {
+                x = x - 1;
+            } else {
+                x = x + 1;
+            }
+        """),
+
+        ("for_in", """
+            let arr = [1, 2, 3];
+            for x in arr {
+                x = x + 1;
+            }
+        """),
+
+        ("while", """
+            let i = 0;
+            while i < 10 {
+                i = i + 1;
+            }
         """),
 
         ("Option + 函数", """

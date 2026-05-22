@@ -6,7 +6,8 @@ from typing import Any
 _: Any
 
 class RustLikeLexer(Lexer):
-    tokens = {'LET', 'FN', 'RETURN', 'SOME', 'NONE', 'IS_SOME', 'IS_NONE', 'MATCH',
+    tokens = {'LET', 'FN', 'RETURN', 'IF', 'ELSE', 'FOR', 'IN', 'WHILE',
+              'SOME', 'NONE', 'IS_SOME', 'IS_NONE', 'MATCH',
               'IDENTIFIER', 'NUMBER',
               'EQ', 'PLUS', 'MINUS', 'TIMES', 'DIVIDE',
               'EQEQ', 'NEQ', 'GT', 'LT', 'GTE', 'LTE',
@@ -24,6 +25,26 @@ class RustLikeLexer(Lexer):
         
     @_(r'\breturn\b')
     def RETURN(self, t):
+        return t
+        
+    @_(r'\bif\b')
+    def IF(self, t):
+        return t
+        
+    @_(r'\belse\b')
+    def ELSE(self, t):
+        return t
+        
+    @_(r'\bfor\b')
+    def FOR(self, t):
+        return t
+        
+    @_(r'\bin\b')
+    def IN(self, t):
+        return t
+        
+    @_(r'\bwhile\b')
+    def WHILE(self, t):
         return t
         
     @_(r'\bSome\b')
@@ -156,10 +177,17 @@ class RustLikeLexer(Lexer):
 if __name__ == '__main__':
     lexer = RustLikeLexer()
     code ='''
-    let v = [1, 2, 3];
-    v.push(16);
-    let k = v[1];
-    let n = v.len();
+    if x > 0 {
+        return 1;
+    } else {
+        return 0;
+    }
+    for x in arr {
+        print(x);
+    }
+    while i < 10 {
+        i = i + 1;
+    }
     '''
     print("Tokens: ")
     for tok in lexer.tokenize(code):
