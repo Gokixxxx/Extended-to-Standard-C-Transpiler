@@ -12,10 +12,44 @@ class RustLikeParser(Parser):
     start = 'program'
     
     # ==================== 程序结构 ====================
-    @_('statements')
+    @_('top_level_list')
     def program(self, p):
-        return ('program', p.statements)
+        return ('program', p.top_level_list)
     
+    @_('top_level')
+    def top_level_list(self, p):
+        return [p.top_level]
+    
+    @_('top_level_list top_level')
+    def top_level_list(self, p):
+        return p.top_level_list + [p.top_level]
+    
+    @_('func_def')
+    def top_level(self, p):
+        return p.func_def
+    
+    @_('statement')
+    def top_level(self, p):
+        return p.statement
+    
+    # ==================== 函数定义 ====================
+    @_('FN IDENTIFIER LPAREN param_list RPAREN LBRACE statements RBRACE')
+    def func_def(self, p):
+        return ('func_def', p.IDENTIFIER, p.param_list, p.statements)
+    
+    @_('FN IDENTIFIER LPAREN RPAREN LBRACE statements RBRACE')
+    def func_def(self, p):
+        return ('func_def', p.IDENTIFIER, [], p.statements)
+    
+    @_('IDENTIFIER')
+    def param_list(self, p):
+        return [p.IDENTIFIER]
+    
+    @_('param_list COMMA IDENTIFIER')
+    def param_list(self, p):
+        return p.param_list + [p.IDENTIFIER]
+    
+    # ==================== 语句块 ====================
     @_('statement')
     def statements(self, p):
         return [p.statement]
@@ -28,6 +62,14 @@ class RustLikeParser(Parser):
     @_('LET IDENTIFIER EQ expr SEMI')
     def statement(self, p):
         return ('let_decl', p.IDENTIFIER, p.expr)
+    
+    @_('RETURN expr SEMI')
+    def statement(self, p):
+        return ('return', p.expr)
+    
+    @_('expr SEMI')
+    def statement(self, p):
+        return ('expr_stmt', p.expr)
     
     # ==================== 表达式 ====================
     @_('match_expr')
@@ -46,6 +88,30 @@ class RustLikeParser(Parser):
     def expr(self, p):
         return ('sub', p.expr, p.term)
     
+    @_('expr EQEQ term')
+    def expr(self, p):
+        return ('eq', p.expr, p.term)
+    
+    @_('expr NEQ term')
+    def expr(self, p):
+        return ('neq', p.expr, p.term)
+    
+    @_('expr GT term')
+    def expr(self, p):
+        return ('gt', p.expr, p.term)
+    
+    @_('expr LT term')
+    def expr(self, p):
+        return ('lt', p.expr, p.term)
+    
+    @_('expr GTE term')
+    def expr(self, p):
+        return ('gte', p.expr, p.term)
+    
+    @_('expr LTE term')
+    def expr(self, p):
+        return ('lte', p.expr, p.term)
+    
     @_('term TIMES factor')
     def term(self, p):
         return ('mul', p.term, p.factor)
@@ -61,6 +127,23 @@ class RustLikeParser(Parser):
     @_('primary')
     def factor(self, p):
         return p.primary
+    
+    # ==================== 函数调用（作为 primary 的一种）====================
+    @_('primary LPAREN arg_list RPAREN')
+    def primary(self, p):
+        return ('call', p.primary, p.arg_list)
+    
+    @_('primary LPAREN RPAREN')
+    def primary(self, p):
+        return ('call', p.primary, [])
+    
+    @_('expr')
+    def arg_list(self, p):
+        return [p.expr]
+    
+    @_('arg_list COMMA expr')
+    def arg_list(self, p):
+        return p.arg_list + [p.expr]
     
     # ==================== Match 表达式 ====================
     @_('MATCH IDENTIFIER LBRACE match_cases RBRACE')
@@ -104,15 +187,6 @@ class RustLikeParser(Parser):
     def primary(self, p):
         return p.expr
     
-    # ==================== 比较运算符 ====================
-    @_('expr EQEQ term')
-    def expr(self, p):
-        return ('eq', p.expr, p.term)
-    
-    @_('expr NEQ term')
-    def expr(self, p):
-        return ('neq', p.expr, p.term)
-    
     # ==================== 类型测试 ====================
     @_('expr IS_SOME')
     def expr(self, p):
@@ -126,8 +200,11 @@ if __name__ == '__main__':
     lexer = RustLikeLexer()
     parser = RustLikeParser()
     
-    code ='''let x = Some(5); 
-    let y = match x { Some(v) => v + 1, None => 0 };
+    code ='''
+    fn add(a, b) {
+        return a + b;
+    }
+    let x = add(1, 2);
     '''
     
     print("Parsing code:")

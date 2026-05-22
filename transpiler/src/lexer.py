@@ -6,15 +6,23 @@ from typing import Any
 _: Any
 
 class RustLikeLexer(Lexer):
-    tokens = {'LET', 'SOME', 'NONE', 'IS_SOME', 'IS_NONE', 'MATCH',
+    tokens = {'LET', 'FN', 'RETURN', 'SOME', 'NONE', 'IS_SOME', 'IS_NONE', 'MATCH',
               'IDENTIFIER', 'NUMBER',
               'EQ', 'PLUS', 'MINUS', 'TIMES', 'DIVIDE',
-              'EQEQ', 'NEQ',
+              'EQEQ', 'NEQ', 'GT', 'LT', 'GTE', 'LTE',
               'LPAREN', 'RPAREN', 'LBRACE', 'RBRACE',
               'SEMI', 'COMMA', 'FAT_ARROW'}
     
     @_(r'\blet\b')
     def LET(self, t):
+        return t
+        
+    @_(r'\bfn\b')
+    def FN(self, t):
+        return t
+        
+    @_(r'\breturn\b')
+    def RETURN(self, t):
         return t
         
     @_(r'\bSome\b')
@@ -56,6 +64,22 @@ class RustLikeLexer(Lexer):
         
     @_(r'!=')
     def NEQ(self, t):
+        return t
+    
+    @_(r'>=')
+    def GTE(self, t):
+        return t
+        
+    @_(r'<=')
+    def LTE(self, t):
+        return t
+        
+    @_(r'>')
+    def GT(self, t):
+        return t
+        
+    @_(r'<')
+    def LT(self, t):
         return t
     
     @_(r'=')
@@ -119,8 +143,11 @@ class RustLikeLexer(Lexer):
 if __name__ == '__main__':
     # 内嵌测试
     lexer = RustLikeLexer()
-    code ='''let x = Some(5); 
-    let y = match x { Some(v) => v + 1, None => 0 };
+    code ='''
+    fn add(a, b) {
+        return a + b;
+    }
+    let x = add(1, 2);
     '''
     print("Tokens: ")
     for tok in lexer.tokenize(code):

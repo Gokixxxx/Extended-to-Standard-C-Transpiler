@@ -1,12 +1,21 @@
 #include "option.h"
 
+int add(int a, int b) {
+    return (a + b);
+}
+
+Option_i32 make_some(int x) {
+    return Some_i32(x);
+}
+
 int main() {
-    Option_i32 x = Some_i32(5);
-    int y;
-    if (x.is_some) {
-        y = (x.value + 10);
+    int x = add(1, 2);
+    Option_i32 y = make_some(10);
+    int z;
+    if (y.is_some) {
+        z = (y.value + 1);
     } else {
-        y = 0;
+        z = 0;
     }
     return 0;
 }
