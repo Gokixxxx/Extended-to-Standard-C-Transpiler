@@ -214,7 +214,8 @@ class CCodeGenerator:
         lines.append(f"if ({scrutinee}.is_some) {{")
         if some_case:
             inner_var, body = some_case
-            body_code = self._generate_expr_in_match(body, inner_var, f"{scrutinee}.value")
+            # 使用替换表：match 变量名 -> scrutinee.value
+            body_code = self._generate_expr(body, subs={inner_var: f"{scrutinee}.value"})
             lines.append(f"    {var_name} = {body_code};")
         lines.append("} else {")
         if none_case:
@@ -223,23 +224,6 @@ class CCodeGenerator:
         lines.append("}")
         
         return lines
-
-    def _generate_expr_in_match(self, expr: Any, match_var: str, replacement: str) -> str:
-        if isinstance(expr, tuple):
-            if expr[0] == 'var':
-                return replacement if expr[1] == match_var else expr[1]
-            elif expr[0] == 'num':
-                return str(expr[1])
-            elif expr[0] in ['add', 'sub', 'mul', 'div']:
-                left = self._generate_expr_in_match(expr[1], match_var, replacement)
-                right = self._generate_expr_in_match(expr[2], match_var, replacement)
-                op_map = {'add': '+', 'sub': '-', 'mul': '*', 'div': '/'}
-                return f"({left} {op_map[expr[0]]} {right})"
-            elif expr[0] == 'call':
-                callee = self._generate_expr_in_match(expr[1], match_var, replacement)
-                args = [self._generate_expr_in_match(a, match_var, replacement) for a in expr[2]]
-                return f"{callee}({', '.join(args)})"
-        return str(expr)
 
     # ==================== if ====================
     def _gen_if(self, node: Tuple) -> str:
@@ -300,26 +284,32 @@ class CCodeGenerator:
         return '\n'.join(lines)
 
     # ==================== 通用表达式生成 ====================
-    def _generate_expr(self, expr: Any) -> str:
+    def _generate_expr(self, expr: Any, subs: dict = None) -> str:
+        if subs is None:
+            subs = {}
+        
         if isinstance(expr, tuple):
             if expr[0] == 'num':
                 return str(expr[1])
             elif expr[0] == 'var':
-                return expr[1]
+                name = expr[1]
+                if name in subs:
+                    return subs[name]
+                return name
             elif expr[0] == 'some':
-                return f"Some_i32({self._generate_expr(expr[1])})"
+                return f"Some_i32({self._generate_expr(expr[1], subs)})"
             elif expr[0] == 'none':
                 return "None_i32()"
             elif expr[0] == 'vec_literal':
                 return "vec_new_i32()"
             elif expr[0] == 'index':
-                obj = self._generate_expr(expr[1])
-                idx = self._generate_expr(expr[2])
+                obj = self._generate_expr(expr[1], subs)
+                idx = self._generate_expr(expr[2], subs)
                 return f"vec_get_i32({obj}, {idx})"
             elif expr[0] == 'method_call':
-                obj = self._generate_expr(expr[1])
+                obj = self._generate_expr(expr[1], subs)
                 method = expr[2]
-                args = [self._generate_expr(a) for a in expr[3]]
+                args = [self._generate_expr(a, subs) for a in expr[3]]
                 if method == 'push':
                     return f"vec_push_i32(&{obj}, {', '.join(args)})"
                 elif method == 'len':
@@ -330,32 +320,32 @@ class CCodeGenerator:
                     return f"vec_remove_i32(&{obj}, {', '.join(args)})"
                 return f"{method}({obj}, {', '.join(args)})"
             elif expr[0] in ['add', 'sub', 'mul', 'div']:
-                left = self._generate_expr(expr[1])
-                right = self._generate_expr(expr[2])
+                left = self._generate_expr(expr[1], subs)
+                right = self._generate_expr(expr[2], subs)
                 op_map = {'add': '+', 'sub': '-', 'mul': '*', 'div': '/'}
                 return f"({left} {op_map[expr[0]]} {right})"
             elif expr[0] in ['eq', 'neq', 'gt', 'lt', 'gte', 'lte']:
-                left = self._generate_expr(expr[1])
-                right = self._generate_expr(expr[2])
+                left = self._generate_expr(expr[1], subs)
+                right = self._generate_expr(expr[2], subs)
                 op_map = {'eq': '==', 'neq': '!=', 'gt': '>', 'lt': '<', 'gte': '>=', 'lte': '<='}
                 return f"({left} {op_map[expr[0]]} {right})"
             elif expr[0] == 'call':
-                callee = self._generate_expr(expr[1])
-                args = [self._generate_expr(a) for a in expr[2]]
+                callee = self._generate_expr(expr[1], subs)
+                args = [self._generate_expr(a, subs) for a in expr[2]]
                 return f"{callee}({', '.join(args)})"
             elif expr[0] == 'assign':
                 lhs = expr[1]
-                rhs = self._generate_expr(expr[2])
+                rhs = self._generate_expr(expr[2], subs)
                 if lhs[0] == 'var':
                     return f"{lhs[1]} = {rhs}"
                 elif lhs[0] == 'index':
-                    obj = self._generate_expr(lhs[1])
-                    idx = self._generate_expr(lhs[2])
+                    obj = self._generate_expr(lhs[1], subs)
+                    idx = self._generate_expr(lhs[2], subs)
                     return f"vec_set_i32(&{obj}, {idx}, {rhs})"
             elif expr[0] == 'is_some':
-                return f"is_some({self._generate_expr(expr[1])})"
+                return f"is_some({self._generate_expr(expr[1], subs)})"
             elif expr[0] == 'is_none':
-                return f"is_none({self._generate_expr(expr[1])})"
+                return f"is_none({self._generate_expr(expr[1], subs)})"
         return str(expr)
 
 

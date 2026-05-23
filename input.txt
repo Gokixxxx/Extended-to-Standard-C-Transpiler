@@ -1,5 +1,8 @@
 fn mytest() {
+    let v = [1, 2, 3];
     let x = Some(5);
-    let b = is_some(x);
-    let c = is_none(x);
+    let y = match x {
+        Some(v) => v * 2 + 1,
+        None => 0
+    };
 }
