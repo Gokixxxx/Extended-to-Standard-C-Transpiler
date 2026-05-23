@@ -1,5 +1,5 @@
 """
-语法分析器
+语法分析器（重构版 — 消除 shift/reduce 冲突）
 """
 from sly import Parser
 from transpiler.src.lexer import RustLikeLexer
@@ -9,10 +9,6 @@ _: Any
 class RustLikeParser(Parser):
     tokens = RustLikeLexer.tokens
 
-    # 调试
-    # debugfile = 'parser.out'
-    
-    # 优先级声明：从低到高
     precedence = (
         ('right', 'EQ'),
         ('right', 'FAT_ARROW'),
@@ -20,6 +16,7 @@ class RustLikeParser(Parser):
         ('left', 'GT', 'LT', 'GTE', 'LTE'),
         ('left', 'PLUS', 'MINUS'),
         ('left', 'TIMES', 'DIVIDE'),
+        ('left', 'LPAREN', 'LBRACKET', 'DOT', 'IS_SOME', 'IS_NONE'),
     )
     
     start = 'program'
@@ -45,38 +42,22 @@ class RustLikeParser(Parser):
     def top_level(self, p):
         return p.statement
     
-    # ==================== Lambda 表达式====================
-    @_('FN IDENTIFIER FAT_ARROW expr')
-    def lambda_expr(self, p):
-        # fn x => expr  等价于  fn(x) { return expr; }
-        return ('fn_expr', [p.IDENTIFIER], [('return', p.expr)])
-    
-    @_('FN LPAREN param_list RPAREN FAT_ARROW expr')
-    def lambda_expr(self, p):
-        # fn(x, y) => expr  脱糖为  fn(x, y) { return expr; }
-        return ('fn_expr', p.param_list, [('return', p.expr)])
-
-    @_('FN LPAREN RPAREN FAT_ARROW expr')
-    def lambda_expr(self, p):
-        # fn() => expr  脱糖为  fn() { return expr; }
-        return ('fn_expr', [], [('return', p.expr)])
-    
-    # ==================== 函数定义 ====================
-    @_('FN IDENTIFIER LPAREN param_list RPAREN LBRACE statements RBRACE')
+    # ==================== 函数定义（独立参数列表，与 Lambda 隔离）====================
+    @_('FN IDENTIFIER LPAREN func_params RPAREN LBRACE statements RBRACE')
     def func_def(self, p):
-        return ('func_def', p.IDENTIFIER, p.param_list, p.statements)
+        return ('func_def', p.IDENTIFIER, p.func_params, p.statements)
     
     @_('FN IDENTIFIER LPAREN RPAREN LBRACE statements RBRACE')
     def func_def(self, p):
         return ('func_def', p.IDENTIFIER, [], p.statements)
     
     @_('IDENTIFIER')
-    def param_list(self, p):
+    def func_params(self, p):
         return [p.IDENTIFIER]
     
-    @_('param_list COMMA IDENTIFIER')
-    def param_list(self, p):
-        return p.param_list + [p.IDENTIFIER]
+    @_('func_params COMMA IDENTIFIER')
+    def func_params(self, p):
+        return p.func_params + [p.IDENTIFIER]
     
     # ==================== 语句块 ====================
     @_('statement')
@@ -116,94 +97,114 @@ class RustLikeParser(Parser):
     def statement(self, p):
         return ('while', p.expr, p.statements)
     
-    # ==================== 表达式 ====================
-    @_('primary EQ expr')
-    def expr(self, p):
-        return ('assign', p.primary, p.expr)
+    # ==================== 表达式层级重构 ====================
     
-    @_('match_expr')
-    def expr(self, p):
-        return p.match_expr
+    # --- atom：最基础、无后缀的表达式单元 ---
+    @_('IDENTIFIER')
+    def atom(self, p):
+        return ('var', p.IDENTIFIER)
     
-    @_('term')
-    def expr(self, p):
-        return p.term
+    @_('NUMBER')
+    def atom(self, p):
+        return ('num', int(p.NUMBER))
     
-    @_('expr PLUS term')
-    def expr(self, p):
-        return ('add', p.expr, p.term)
+    @_('SOME LPAREN expr RPAREN')
+    def atom(self, p):
+        return ('some', p.expr)
     
-    @_('expr MINUS term')
-    def expr(self, p):
-        return ('sub', p.expr, p.term)
+    @_('NONE')
+    def atom(self, p):
+        return ('none',)
     
-    @_('expr EQEQ term')
-    def expr(self, p):
-        return ('eq', p.expr, p.term)
+    @_('LPAREN expr RPAREN')
+    def atom(self, p):
+        return p.expr
     
-    @_('expr NEQ term')
-    def expr(self, p):
-        return ('neq', p.expr, p.term)
-    
-    @_('expr GT term')
-    def expr(self, p):
-        return ('gt', p.expr, p.term)
-    
-    @_('expr LT term')
-    def expr(self, p):
-        return ('lt', p.expr, p.term)
-    
-    @_('expr GTE term')
-    def expr(self, p):
-        return ('gte', p.expr, p.term)
-    
-    @_('expr LTE term')
-    def expr(self, p):
-        return ('lte', p.expr, p.term)
-    
-    @_('term TIMES factor')
-    def term(self, p):
-        return ('mul', p.term, p.factor)
-    
-    @_('term DIVIDE factor')
-    def term(self, p):
-        return ('div', p.term, p.factor)
-    
-    @_('factor')
-    def term(self, p):
-        return p.factor
-    
-    @_('primary')
-    def factor(self, p):
-        return p.primary
-    
-    # 函数调用风格：is_some(x), is_none(x)
-    @_('IS_SOME LPAREN expr RPAREN')
-    def primary(self, p):
-        return ('is_some', p.expr)
-
-    @_('IS_NONE LPAREN expr RPAREN')
-    def primary(self, p):
-        return ('is_none', p.expr)
-
-    # 属性访问风格：x.is_some, x.is_none
-    @_('primary DOT IS_SOME')
-    def primary(self, p):
-        return ('is_some', p.primary)
-
-    @_('primary DOT IS_NONE')
-    def primary(self, p):
-        return ('is_none', p.primary)
-    
-    # ==================== 数组字面量 ====================
     @_('LBRACKET expr_list RBRACKET')
-    def primary(self, p):
+    def atom(self, p):
         return ('vec_literal', p.expr_list)
     
     @_('LBRACKET RBRACKET')
-    def primary(self, p):
+    def atom(self, p):
         return ('vec_literal', [])
     
+    # --- Lambda / 匿名函数（直接作为 postfix 的一种）---
+    @_('FN IDENTIFIER FAT_ARROW expr')
+    def lambda_or_fn(self, p):
+        return ('fn_expr', [p.IDENTIFIER], [('return', p.expr)])
+    
+    @_('FN LPAREN param_list RPAREN FAT_ARROW expr')
+    def lambda_or_fn(self, p):
+        return ('fn_expr', p.param_list, [('return', p.expr)])
+    
+    @_('FN LPAREN RPAREN FAT_ARROW expr')
+    def lambda_or_fn(self, p):
+        return ('fn_expr', [], [('return', p.expr)])
+    
+    @_('FN LPAREN param_list RPAREN LBRACE statements RBRACE')
+    def lambda_or_fn(self, p):
+        return ('fn_expr', p.param_list, p.statements)
+    
+    @_('FN LPAREN RPAREN LBRACE statements RBRACE')
+    def lambda_or_fn(self, p):
+        return ('fn_expr', [], p.statements)
+    
+    # --- 参数列表（仅用于 Lambda / 匿名函数，与 func_params 隔离）---
+    @_('IDENTIFIER')
+    def param_list(self, p):
+        return [p.IDENTIFIER]
+    
+    @_('param_list COMMA IDENTIFIER')
+    def param_list(self, p):
+        return p.param_list + [p.IDENTIFIER]
+    
+    # --- postfix：atom / lambda + 任意后缀操作 ---
+    @_('atom')
+    def postfix(self, p):
+        return p.atom
+    
+    @_('lambda_or_fn')
+    def postfix(self, p):
+        return p.lambda_or_fn
+    
+    @_('postfix LPAREN arg_list RPAREN')
+    def postfix(self, p):
+        return ('call', p.postfix, p.arg_list)
+    
+    @_('postfix LPAREN RPAREN')
+    def postfix(self, p):
+        return ('call', p.postfix, [])
+    
+    @_('postfix LBRACKET expr RBRACKET')
+    def postfix(self, p):
+        return ('index', p.postfix, p.expr)
+    
+    @_('postfix DOT IDENTIFIER LPAREN arg_list RPAREN')
+    def postfix(self, p):
+        return ('method_call', p.postfix, p.IDENTIFIER, p.arg_list)
+    
+    @_('postfix DOT IDENTIFIER LPAREN RPAREN')
+    def postfix(self, p):
+        return ('method_call', p.postfix, p.IDENTIFIER, [])
+    
+    # is_some / is_none 后缀风格：x.is_some
+    @_('postfix DOT IS_SOME')
+    def postfix(self, p):
+        return ('is_some', p.postfix)
+    
+    @_('postfix DOT IS_NONE')
+    def postfix(self, p):
+        return ('is_none', p.postfix)
+    
+    @_('postfix IS_SOME')
+    def postfix(self, p):
+        return ('is_some', p.postfix)
+
+    @_('postfix IS_NONE')
+    def postfix(self, p):
+        return ('is_none', p.postfix)
+
+    # --- 表达式列表 & 参数列表 ---
     @_('expr')
     def expr_list(self, p):
         return [p.expr]
@@ -211,28 +212,6 @@ class RustLikeParser(Parser):
     @_('expr_list COMMA expr')
     def expr_list(self, p):
         return p.expr_list + [p.expr]
-    
-    # ==================== 索引访问 & 方法调用 ====================
-    @_('primary LBRACKET expr RBRACKET')
-    def primary(self, p):
-        return ('index', p.primary, p.expr)
-    
-    @_('primary DOT IDENTIFIER LPAREN arg_list RPAREN')
-    def primary(self, p):
-        return ('method_call', p.primary, p.IDENTIFIER, p.arg_list)
-    
-    @_('primary DOT IDENTIFIER LPAREN RPAREN')
-    def primary(self, p):
-        return ('method_call', p.primary, p.IDENTIFIER, [])
-    
-    # ==================== 函数调用（作为 primary 的一种）====================
-    @_('primary LPAREN arg_list RPAREN')
-    def primary(self, p):
-        return ('call', p.primary, p.arg_list)
-    
-    @_('primary LPAREN RPAREN')
-    def primary(self, p):
-        return ('call', p.primary, [])
     
     @_('expr')
     def arg_list(self, p):
@@ -242,11 +221,71 @@ class RustLikeParser(Parser):
     def arg_list(self, p):
         return p.arg_list + [p.expr]
     
-    # ==================== Match 表达式 ====================
+    # --- expr：中缀运算（左递归）---
+    @_('postfix')
+    def expr(self, p):
+        return p.postfix
+    
+    @_('expr PLUS postfix')
+    def expr(self, p):
+        return ('add', p.expr, p.postfix)
+    
+    @_('expr MINUS postfix')
+    def expr(self, p):
+        return ('sub', p.expr, p.postfix)
+    
+    @_('expr TIMES postfix')
+    def expr(self, p):
+        return ('mul', p.expr, p.postfix)
+    
+    @_('expr DIVIDE postfix')
+    def expr(self, p):
+        return ('div', p.expr, p.postfix)
+    
+    @_('expr EQEQ postfix')
+    def expr(self, p):
+        return ('eq', p.expr, p.postfix)
+    
+    @_('expr NEQ postfix')
+    def expr(self, p):
+        return ('neq', p.expr, p.postfix)
+    
+    @_('expr GT postfix')
+    def expr(self, p):
+        return ('gt', p.expr, p.postfix)
+    
+    @_('expr LT postfix')
+    def expr(self, p):
+        return ('lt', p.expr, p.postfix)
+    
+    @_('expr GTE postfix')
+    def expr(self, p):
+        return ('gte', p.expr, p.postfix)
+    
+    @_('expr LTE postfix')
+    def expr(self, p):
+        return ('lte', p.expr, p.postfix)
+    
+    # 赋值（最低优先级，右结合）
+    @_('postfix EQ expr')
+    def expr(self, p):
+        return ('assign', p.postfix, p.expr)
+    
+    # Match 表达式
     @_('MATCH IDENTIFIER LBRACE match_cases RBRACE')
-    def match_expr(self, p):
+    def expr(self, p):
         return ('match', p.IDENTIFIER, p.match_cases)
     
+    # is_some / is_none 前缀风格：is_some(x)
+    @_('IS_SOME LPAREN expr RPAREN')
+    def expr(self, p):
+        return ('is_some', p.expr)
+    
+    @_('IS_NONE LPAREN expr RPAREN')
+    def expr(self, p):
+        return ('is_none', p.expr)
+    
+    # ==================== Match 分支 ====================
     @_('match_case')
     def match_cases(self, p):
         return [p.match_case]
@@ -262,52 +301,9 @@ class RustLikeParser(Parser):
     @_('NONE FAT_ARROW expr')
     def match_case(self, p):
         return ('none_case', p.expr)
-    
-    # ==================== 基本表达式 ====================
-    @_('IDENTIFIER')
-    def primary(self, p):
-        return ('var', p.IDENTIFIER)
-    
-    @_('NUMBER')
-    def primary(self, p):
-        return ('num', int(p.NUMBER))
-    
-    @_('SOME LPAREN expr RPAREN')
-    def primary(self, p):
-        return ('some', p.expr)
-    
-    @_('NONE')
-    def primary(self, p):
-        return ('none',)
-    
-    @_('LPAREN expr RPAREN')
-    def primary(self, p):
-        return p.expr
-    
-    # Lambda 归入 primary
-    @_('lambda_expr')
-    def primary(self, p):
-        return p.lambda_expr
-    
-    # ==================== 类型测试 ====================
-    @_('expr IS_SOME')
-    def expr(self, p):
-        return ('is_some', p.expr)
-    
-    @_('expr IS_NONE')
-    def expr(self, p):
-        return ('is_none', p.expr)
-    
-    # ==================== 匿名函数表达式 ====================
-    @_('FN LPAREN param_list RPAREN LBRACE statements RBRACE')
-    def primary(self, p):
-        return ('fn_expr', p.param_list, p.statements)
-
-    @_('FN LPAREN RPAREN LBRACE statements RBRACE')
-    def primary(self, p):
-        return ('fn_expr', [], p.statements)
 
 if __name__ == '__main__':
+    from transpiler.src.lexer import RustLikeLexer
     lexer = RustLikeLexer()
     parser = RustLikeParser()
     
@@ -316,7 +312,22 @@ if __name__ == '__main__':
     let result = add(3, 4);
 
     let greet = fn() => 42;
-    let g = greet(); 
+    let g = greet();
+    
+    let v = [1, 2, 3];
+    v.push(10);
+    let x = v[1];
+    v[1] = 5;
+    
+    let opt = Some(10);
+    let b = opt.is_some;
+    let c = is_some(opt);
+    let d = opt is_some;
+    
+    let y = match opt {
+        Some(v) => v + 1,
+        None => 0
+    };
     '''
     
     print("Parsing code:")
