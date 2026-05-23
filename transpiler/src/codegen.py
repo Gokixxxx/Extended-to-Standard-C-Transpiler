@@ -50,6 +50,16 @@ class CCodeGenerator:
         self.func_return_types[func_name] = 'int'
 
     def _infer_expr_type(self, expr: Any) -> str:
+        """
+        推断表达式对应的 C 类型名。
+        
+        抽象类型 -> C 类型 映射：
+            i32         -> int
+            bool        -> int  (C 无 bool，用 0/1)
+            Vec<i32>    -> Vec_i32
+            Option<i32> -> Option_i32
+            fn(...)->R  -> 函数指针
+        """
         if not isinstance(expr, tuple):
             return 'int'
         op = expr[0]
@@ -74,7 +84,7 @@ class CCodeGenerator:
         elif op in ('add', 'sub', 'mul', 'div'):
             return 'int'
         elif op in ('eq', 'neq', 'gt', 'lt', 'gte', 'lte'):
-            return 'bool'
+            return 'int'
         elif op == 'match':
             return 'int'
         return 'int'
