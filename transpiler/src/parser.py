@@ -10,7 +10,7 @@ class RustLikeParser(Parser):
     tokens = RustLikeLexer.tokens
 
     # 调试
-    debugfile = 'parser.out'
+    # debugfile = 'parser.out'
     
     # 优先级声明：从低到高
     precedence = (
