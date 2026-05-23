@@ -8,10 +8,14 @@ _: Any
 
 class RustLikeParser(Parser):
     tokens = RustLikeLexer.tokens
+
+    # 调试
+    debugfile = 'parser.out'
     
     # 优先级声明：从低到高
     precedence = (
         ('right', 'EQ'),
+        ('right', 'FAT_ARROW'),
         ('left', 'EQEQ', 'NEQ'),
         ('left', 'GT', 'LT', 'GTE', 'LTE'),
         ('left', 'PLUS', 'MINUS'),
@@ -40,6 +44,12 @@ class RustLikeParser(Parser):
     @_('statement')
     def top_level(self, p):
         return p.statement
+    
+    # ==================== Lambda 表达式（独立层级）====================
+    @_('FN IDENTIFIER FAT_ARROW expr')
+    def lambda_expr(self, p):
+        # fn x => expr  等价于  fn(x) { return expr; }
+        return ('fn_expr', [p.IDENTIFIER], [('return', p.expr)])
     
     # ==================== 函数定义 ====================
     @_('FN IDENTIFIER LPAREN param_list RPAREN LBRACE statements RBRACE')
@@ -264,6 +274,11 @@ class RustLikeParser(Parser):
     def primary(self, p):
         return p.expr
     
+    # Lambda 归入 primary
+    @_('lambda_expr')
+    def primary(self, p):
+        return p.lambda_expr
+    
     # ==================== 类型测试 ====================
     @_('expr IS_SOME')
     def expr(self, p):
@@ -287,7 +302,9 @@ if __name__ == '__main__':
     parser = RustLikeParser()
     
     code ='''
-    let double = fn(x) { return x * 2; };
+    let double = fn x => x * 2;
+    let add = fn a => fn b => a + b;
+    let result = add(3)(4);
     '''
     
     print("Parsing code:")
