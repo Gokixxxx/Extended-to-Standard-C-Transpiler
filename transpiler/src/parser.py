@@ -97,9 +97,9 @@ class RustLikeParser(Parser):
         return ('while', p.expr, p.statements)
     
     # ==================== 表达式 ====================
-    @_('IDENTIFIER EQ expr')
+    @_('primary EQ expr')
     def expr(self, p):
-        return ('assign', p.IDENTIFIER, p.expr)
+        return ('assign', p.primary, p.expr)
     
     @_('match_expr')
     def expr(self, p):

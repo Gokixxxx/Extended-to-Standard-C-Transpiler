@@ -1,18 +1,5 @@
-fn find(target) {
-    if target < 3 {
-        return Some(5);
-    }
-    return None;
+fn mytest() {
+    let v = [1, 2, 3];
+    v[1] = 99;
+    let x = v[1];
 }
-
-let result1 = find(3);
-let val1 = match result1 {
-    Some(v) => v,
-    None => 0
-};
-
-let result2 = find(1);
-let val2 = match result2 {
-    Some(v) => v,
-    None => 0
-};

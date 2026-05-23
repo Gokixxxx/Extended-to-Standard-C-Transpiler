@@ -110,17 +110,31 @@ class SemanticAnalyzer:
 
     # ============ 赋值 ============
     def visit_assign(self, node: Tuple):
-        var_name = node[1]
+        lhs = node[1]
         expr_node = node[2]
-        
-        var_type = self.lookup(var_name)
-        if var_type is None:
-            self.errors.append(f"错误: 赋值前未声明变量 '{var_name}'")
-            return
-        
         expr_type = self.visit_expr(expr_node)
-        if expr_type != var_type:
-            self.errors.append(f"错误: 不能将 {expr_type} 赋值给 {var_type} 类型的变量 '{var_name}'")
+
+        if lhs[0] == 'var':
+            var_name = lhs[1]
+            var_type = self.lookup(var_name)
+            if var_type is None:
+                self.errors.append(f"错误: 赋值前未声明变量 '{var_name}'")
+                return
+            if expr_type != var_type:
+                self.errors.append(f"错误: 不能将 {expr_type} 赋值给 {var_type} 类型的变量 '{var_name}'")
+
+        elif lhs[0] == 'index':
+            obj_type = self.visit_expr(lhs[1])
+            idx_type = self.visit_expr(lhs[2])
+            if obj_type != 'Vec<i32>':
+                self.errors.append(f"错误: 索引赋值要求 Vec<i32>，但得到 {obj_type}")
+            if idx_type != 'i32':
+                self.errors.append(f"错误: 索引必须是 i32，但得到 {idx_type}")
+            if expr_type != 'i32':
+                self.errors.append(f"错误: 不能将 {expr_type} 赋值给 Vec<i32> 元素")
+
+        else:
+            self.errors.append(f"错误: 不支持的赋值目标")
 
     # ============ if ============
     def visit_if(self, node: Tuple):

@@ -1,26 +1,15 @@
-#include "option.h"
+#include "vec.h"
 
-Option_i32 find(int target) {
-    if ((target < 3)) {
-        return Some_i32(5);
-    }
-    return None_i32();
+int mytest(void) {
+    Vec_i32 v = vec_new_i32();
+    vec_push_i32(&v, 1);
+    vec_push_i32(&v, 2);
+    vec_push_i32(&v, 3);
+    vec_set_i32(&v, 1, 99);
+    int x = vec_get_i32(v, 1);
+    free(v.data);
 }
 
 int main() {
-    Option_i32 result1 = find(3);
-    int val1;
-    if (result1.is_some) {
-        val1 = result1.value;
-    } else {
-        val1 = 0;
-    }
-    Option_i32 result2 = find(1);
-    int val2;
-    if (result2.is_some) {
-        val2 = result2.value;
-    } else {
-        val2 = 0;
-    }
     return 0;
 }

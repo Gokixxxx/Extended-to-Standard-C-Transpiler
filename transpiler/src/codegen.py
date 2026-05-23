@@ -12,6 +12,7 @@ class CCodeGenerator:
         self.func_return_types = {}
         self.vec_vars = set()
         self.temp_counter = 0
+        self.in_function = False
 
     def generate(self, ast: Tuple) -> str:
         self.includes.clear()
@@ -114,12 +115,24 @@ class CCodeGenerator:
         
         param_str = ', '.join(f'int {p}' for p in params) if params else 'void'
         
+        # 收集本函数内声明的 Vector，返回前 free
+        func_vec_vars = []
+        
+        self.in_function = True           # 进入函数
         lines = [f'{ret_type} {func_name}({param_str}) {{']
         for stmt in body:
+            if stmt[0] == 'let_decl' and self._infer_expr_type(stmt[2]) == 'Vec_i32':
+                func_vec_vars.append(stmt[1])
+            
             stmt_code = self._gen_stmt(stmt)
             for line in stmt_code.split('\n'):
                 lines.append(f'    {line}')
+        
+        for var in func_vec_vars:
+            lines.append(f'    free({var}.data);')
+        
         lines.append('}')
+        self.in_function = False          # 退出函数
         
         return '\n'.join(lines)
 
@@ -156,7 +169,8 @@ class CCodeGenerator:
         
         if type_str == 'Vec_i32':
             self.includes.add('vec.h')
-            self.vec_vars.add(var_name)
+            if not self.in_function:
+                self.vec_vars.add(var_name)
             if expr[0] == 'vec_literal':
                 lines = [f'Vec_i32 {var_name} = vec_new_i32();']
                 for elem in expr[1]:
@@ -330,9 +344,14 @@ class CCodeGenerator:
                 args = [self._generate_expr(a) for a in expr[2]]
                 return f"{callee}({', '.join(args)})"
             elif expr[0] == 'assign':
-                var = expr[1]
-                val = self._generate_expr(expr[2])
-                return f"{var} = {val}"
+                lhs = expr[1]
+                rhs = self._generate_expr(expr[2])
+                if lhs[0] == 'var':
+                    return f"{lhs[1]} = {rhs}"
+                elif lhs[0] == 'index':
+                    obj = self._generate_expr(lhs[1])
+                    idx = self._generate_expr(lhs[2])
+                    return f"vec_set_i32(&{obj}, {idx}, {rhs})"
         return str(expr)
 
 
