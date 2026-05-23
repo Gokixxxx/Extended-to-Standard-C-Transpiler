@@ -45,11 +45,21 @@ class RustLikeParser(Parser):
     def top_level(self, p):
         return p.statement
     
-    # ==================== Lambda 表达式（独立层级）====================
+    # ==================== Lambda 表达式====================
     @_('FN IDENTIFIER FAT_ARROW expr')
     def lambda_expr(self, p):
         # fn x => expr  等价于  fn(x) { return expr; }
         return ('fn_expr', [p.IDENTIFIER], [('return', p.expr)])
+    
+    @_('FN LPAREN param_list RPAREN FAT_ARROW expr')
+    def lambda_expr(self, p):
+        # fn(x, y) => expr  脱糖为  fn(x, y) { return expr; }
+        return ('fn_expr', p.param_list, [('return', p.expr)])
+
+    @_('FN LPAREN RPAREN FAT_ARROW expr')
+    def lambda_expr(self, p):
+        # fn() => expr  脱糖为  fn() { return expr; }
+        return ('fn_expr', [], [('return', p.expr)])
     
     # ==================== 函数定义 ====================
     @_('FN IDENTIFIER LPAREN param_list RPAREN LBRACE statements RBRACE')
@@ -302,9 +312,11 @@ if __name__ == '__main__':
     parser = RustLikeParser()
     
     code ='''
-    let double = fn x => x * 2;
-    let add = fn a => fn b => a + b;
-    let result = add(3)(4);
+    let add = fn(x, y) => x + y;
+    let result = add(3, 4);
+
+    let greet = fn() => 42;
+    let g = greet(); 
     '''
     
     print("Parsing code:")
