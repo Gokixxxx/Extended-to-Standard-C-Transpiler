@@ -352,6 +352,10 @@ class CCodeGenerator:
                     obj = self._generate_expr(lhs[1])
                     idx = self._generate_expr(lhs[2])
                     return f"vec_set_i32(&{obj}, {idx}, {rhs})"
+            elif expr[0] == 'is_some':
+                return f"is_some({self._generate_expr(expr[1])})"
+            elif expr[0] == 'is_none':
+                return f"is_none({self._generate_expr(expr[1])})"
         return str(expr)
 
 

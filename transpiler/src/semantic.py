@@ -44,6 +44,11 @@ class SemanticAnalyzer:
     # ============ 主分析入口 ============
     def analyze(self, ast: Tuple) -> bool:
         self.reset()
+
+        if ast is None:
+            self.errors.append("Error: parse error, AST is None")
+            return False
+        
         self.visit(ast)
         return len(self.errors) == 0
 

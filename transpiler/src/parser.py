@@ -157,6 +157,24 @@ class RustLikeParser(Parser):
     def factor(self, p):
         return p.primary
     
+    # 函数调用风格：is_some(x), is_none(x)
+    @_('IS_SOME LPAREN expr RPAREN')
+    def primary(self, p):
+        return ('is_some', p.expr)
+
+    @_('IS_NONE LPAREN expr RPAREN')
+    def primary(self, p):
+        return ('is_none', p.expr)
+
+    # 属性访问风格：x.is_some, x.is_none
+    @_('primary DOT IS_SOME')
+    def primary(self, p):
+        return ('is_some', p.primary)
+
+    @_('primary DOT IS_NONE')
+    def primary(self, p):
+        return ('is_none', p.primary)
+    
     # ==================== 数组字面量 ====================
     @_('LBRACKET expr_list RBRACKET')
     def primary(self, p):
