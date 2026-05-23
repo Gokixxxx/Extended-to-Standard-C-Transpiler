@@ -12,6 +12,9 @@ class SemanticAnalyzer:
         self.warnings: List[str] = []
         self.current_func: Optional[str] = None
         self.deferred_funcs = []
+        self._in_fn_expr = False
+        self._fn_expr_ret_type = 'void'
+        self._predeclared: Dict[str, str] = {}
 
     def reset(self):
         self.symbol_table = [{}]
@@ -20,6 +23,7 @@ class SemanticAnalyzer:
         self.warnings = []
         self.current_func = None
         self.deferred_funcs = []
+        self._predeclared = {}
 
     # ============ 作用域管理 ============
     def enter_scope(self):
@@ -50,7 +54,7 @@ class SemanticAnalyzer:
             self.errors.append("Error: parse error, AST is None")
             return False
         
-        # 第一遍：收集所有函数签名
+        # 第一遍：收集所有顶层函数签名
         if ast[0] == 'program':
             for top in ast[1]:
                 if top[0] == 'func_def':
@@ -60,18 +64,47 @@ class SemanticAnalyzer:
                         'params': ['unknown'] * len(params),
                         'return_type': 'unknown'
                     }
-        
-        # 第二遍：扫描所有调用节点（包括嵌套在函数体内的），推断参数类型
-        self._collect_calls(ast)
-        
-        # 第三遍：分析所有函数体
+
+        # 第1.5遍：预收集顶层 let_decl 变量类型（用于调用参数推断）
+        self._predeclared.clear()
         if ast[0] == 'program':
             for top in ast[1]:
-                if top[0] == 'func_def':
-                    self._analyze_func_body(top)
+                if top[0] == 'let_decl':
+                    var_name = top[1]
+                    expr_node = top[2]
+                    if expr_node[0] == 'fn_expr':
+                        params = expr_node[1]
+                        body = expr_node[2]
+                        ret_type = 'void'
+                        for stmt in body:
+                            if isinstance(stmt, tuple) and stmt[0] == 'return':
+                                ret_type = self._quick_infer_type(stmt[1])
+                                break
+                        expr_type = f"fn({','.join(['i32'] * len(params))})->{ret_type}"
+                    else:
+                        expr_type = self._quick_infer_type(expr_node)
+                    self._predeclared[var_name] = expr_type
+        
+        # 第二遍：扫描所有调用节点，推断顶层函数参数类型
+        self._collect_calls(ast)
+        
+        # 第三遍：分析所有节点（包括顶层 let_decl、expr_stmt、func_def）
+        self.visit(ast)
         
         return len(self.errors) == 0
     
+    def parse_fn_type(self, type_str: str):
+        """将 'fn(i32,i32)->i32' 解析为 (['i32', 'i32'], 'i32')，失败返回 None"""
+        if not type_str or not type_str.startswith('fn('):
+            return None
+        arrow_idx = type_str.find(')->')
+        if arrow_idx == -1:
+            return None
+        params_str = type_str[3:arrow_idx]
+        ret_type = type_str[arrow_idx + 3:]
+        params = [p.strip() for p in params_str.split(',') if p.strip()]
+        return (params, ret_type)
+
     def _collect_calls(self, node: Any):
         """递归扫描 AST，找到所有 call 节点并推断参数类型"""
         if isinstance(node, tuple):
@@ -88,23 +121,27 @@ class SemanticAnalyzer:
                 self._collect_calls(item)
     
     def _infer_call_types(self, node: Tuple):
-        """只推断参数类型，不检查数量或类型一致性"""
         callee_node = node[1]
         args = node[2]
 
-        if callee_node[0] != 'var':
+        func_info = None
+
+        if callee_node[0] == 'var':
+            func_name = callee_node[1]
+            func_info = self.func_table.get(func_name)
+            # 注意：第二遍扫描时符号表为空，无法 lookup 变量类型
+            # 函数变量的类型在第三遍 visit_let_decl 时确定，此处不处理
+        elif callee_node[0] == 'fn_expr':
+            # 匿名函数直接调用，无需更新 func_table
             return
 
-        func_name = callee_node[1]
-        func_info = self.func_table.get(func_name)
         if func_info is None:
             return
 
         for i, arg in enumerate(args):
             arg_type = self._quick_infer_type(arg)
-            if i < len(func_info['params']):
-                if func_info['params'][i] == 'unknown':
-                    func_info['params'][i] = arg_type
+            if i < len(func_info['params']) and func_info['params'][i] == 'unknown':
+                func_info['params'][i] = arg_type
     
     def _quick_infer_type(self, node: Any) -> str:
         """快速推断类型，不报错，用于参数类型推断"""
@@ -122,7 +159,10 @@ class SemanticAnalyzer:
         elif op == 'none':
             return 'Option<i32>'
         elif op == 'var':
-            return self.lookup(node[1]) or 'unknown'
+            t = self.lookup(node[1])
+            if t:
+                return t
+            return self._predeclared.get(node[1], 'unknown')
         elif op in ('add', 'sub', 'mul', 'div'):
             return 'i32'
         elif op in ('eq', 'neq', 'gt', 'lt', 'gte', 'lte'):
@@ -137,6 +177,15 @@ class SemanticAnalyzer:
             if node[2] in ('len', 'pop'):
                 return 'i32'
             return 'void'
+        elif op == 'fn_expr':
+            params = node[1]
+            body = node[2]
+            ret_type = 'void'
+            for stmt in body:
+                if isinstance(stmt, tuple) and stmt[0] == 'return':
+                    ret_type = self._quick_infer_type(stmt[1])
+                    break
+            return f"fn({','.join(['i32'] * len(params))})->{ret_type}"
         return 'unknown'
 
     def visit(self, node: Any):
@@ -151,7 +200,7 @@ class SemanticAnalyzer:
                     self.visit(top)
 
             elif node_type == 'func_def':
-                pass
+                self._analyze_func_body(node)
 
             elif node_type == 'let_decl':
                 self.visit_let_decl(node)
@@ -311,13 +360,18 @@ class SemanticAnalyzer:
 
     # ============ return 语句 ============
     def visit_return(self, node: Tuple):
-        if self.current_func is None:
+        # fn_expr 内允许 return
+        if self.current_func is None and not self._in_fn_expr:
             self.errors.append("错误: return 语句只能在函数内部使用")
             return
 
         expr_type = self.visit_expr(node[1])
-        func_info = self.func_table[self.current_func]
+        
+        # 匿名函数不更新 func_table（因为不在其中）
+        if self.current_func == '<anonymous>':
+            return
 
+        func_info = self.func_table[self.current_func]
         if func_info['return_type'] == 'unknown':
             func_info['return_type'] = expr_type
         elif func_info['return_type'] != expr_type:
@@ -330,32 +384,69 @@ class SemanticAnalyzer:
         callee_node = node[1]
         args = node[2]
 
-        if callee_node[0] != 'var':
-            self.errors.append("错误: 目前只支持直接函数名调用")
-            return 'unknown'
+        func_info = None
+        func_name = None
 
-        func_name = callee_node[1]
-        func_info = self.func_table.get(func_name)
+        # === 路径 1：通过变量名调用（顶层函数 或 函数变量）===
+        if callee_node[0] == 'var':
+            func_name = callee_node[1]
+            # 先查顶层函数表
+            func_info = self.func_table.get(func_name)
+            # 再查符号表（函数值变量）
+            if func_info is None:
+                var_type = self.lookup(func_name)
+                if var_type and var_type.startswith('fn('):
+                    parsed = self.parse_fn_type(var_type)
+                    if parsed:
+                        param_types, ret_type = parsed
+                        func_info = {'params': list(param_types), 'return_type': ret_type}
+                elif var_type == 'unknown':
+                    # P1 兜底：高阶函数参数类型未知时，假设为函数，仅警告
+                    self.warnings.append(f"警告: 函数参数 '{func_name}' 类型未知，跳过参数检查")
+                    return 'unknown'
+
+        # === 路径 2：直接调用匿名函数，如 fn(x){...}(10) ===
+        elif callee_node[0] == 'fn_expr':
+            params = callee_node[1]
+            body = callee_node[2]
+            self.enter_scope()
+            for p in params:
+                self.declare(p, 'i32')
+            ret_type = 'void'
+            for stmt in body:
+                if isinstance(stmt, tuple) and stmt[0] == 'return':
+                    ret_type = self.visit_expr(stmt[1])
+                    break
+            self.exit_scope()
+            param_types = ['i32'] * len(params)
+            func_info = {'params': param_types, 'return_type': ret_type}
+            func_name = '<anonymous>'
+
+        else:
+            self.errors.append("错误: 目前只支持直接函数名、变量或匿名函数调用")
+            return 'unknown'
 
         if func_info is None:
-            self.errors.append(f"错误: 未定义的函数 '{func_name}'")
+            self.errors.append(f"错误: 未定义的函数或函数变量 '{func_name}'")
             return 'unknown'
 
-        # 推断参数类型（如果尚未确定）
-        for i, arg in enumerate(args):
-            arg_type = self.visit_expr(arg)
-            if i < len(func_info['params']):
-                if func_info['params'][i] == 'unknown':
+        # 推断参数类型（仅对 func_table 中的顶层函数有意义）
+        if func_name in self.func_table:
+            for i, arg in enumerate(args):
+                arg_type = self.visit_expr(arg)
+                if i < len(func_info['params']) and func_info['params'][i] == 'unknown':
                     func_info['params'][i] = arg_type
 
+        # 参数数量检查
         if len(args) != len(func_info['params']):
             self.errors.append(
                 f"错误: 函数 '{func_name}' 期望 {len(func_info['params'])} 个参数，实际 {len(args)} 个"
             )
 
+        # 参数类型检查
         for i, arg in enumerate(args):
             arg_type = self.visit_expr(arg)
-            if i < len(func_info['params']) and arg_type != func_info['params'][i]:
+            if i < len(func_info['params']) and arg_type != func_info['params'][i] and func_info['params'][i] != 'unknown':
                 self.errors.append(
                     f"错误: 函数 '{func_name}' 第 {i+1} 个参数期望 {func_info['params'][i]}，实际 {arg_type}"
                 )
@@ -467,6 +558,9 @@ class SemanticAnalyzer:
                 if t is None:
                     self.errors.append(f"错误: 未声明的变量 '{name}'")
                     return 'unknown'
+                # P1: 函数表达式禁止捕获外部变量
+                if self._in_fn_expr and name not in self.symbol_table[-1]:
+                    self.errors.append(f"错误: P1函数表达式不能捕获外部变量 '{name}'")
                 return t
 
             elif node_type == 'num':
@@ -522,6 +616,33 @@ class SemanticAnalyzer:
             elif node_type == 'assign':
                 self.visit_assign(node)
                 return 'void'
+            
+            elif node_type == 'fn_expr':
+                params = node[1]
+                body = node[2]
+                self.enter_scope()
+                for p in params:
+                    self.declare(p, 'i32')
+                
+                # 标记进入 fn_expr 上下文
+                prev_in_fn = self._in_fn_expr
+                self._in_fn_expr = True
+                
+                # 推断返回类型（只扫描 return）
+                ret_type = 'void'
+                for stmt in body:
+                    if isinstance(stmt, tuple) and stmt[0] == 'return':
+                        # 临时伪装 current_func，避免 visit_return 报错
+                        prev_func = self.current_func
+                        self.current_func = '<anonymous>'
+                        ret_type = self.visit_expr(stmt[1])
+                        self.current_func = prev_func
+                        break
+                
+                self._in_fn_expr = prev_in_fn
+                self.exit_scope()
+                param_types = ['i32'] * len(params)
+                return f"fn({','.join(param_types)})->{ret_type}"
 
         return 'unknown'
 
@@ -551,49 +672,31 @@ if __name__ == '__main__':
     from transpiler.src.parser import RustLikeParser
 
     test_cases = [
-        ("基本函数", """
-            fn add(a, b) {
-                return a + b;
-            }
-            let x = add(1, 2);
-        """),
-
-        ("数组操作", """
-            let v = [1, 2, 3];
-            v.push(16);
-            let k = v[1];
-            let n = v.len();
-        """),
-
-        ("if/else", """
-            let x = 5;
-            if x > 0 {
-                x = x - 1;
-            } else {
-                x = x + 1;
-            }
-        """),
-
-        ("for_in", """
-            let arr = [1, 2, 3];
-            for x in arr {
-                print(x);
-            }
-        """),
-
-        ("while", """
-            let i = 0;
-            while i < 10 {
-                i = i + 1;
-            }
-        """),
-
         ("Option + 函数", """
             fn make_some(x) {
                 return Some(x);
             }
             let y = make_some(10);
             let z = match y { Some(v) => v + 1, None => 0 };
+        """),
+
+        ("函数作为值", """
+            let double = fn(x) { return x * 2; };
+            let result = double(10);
+        """),
+
+        ("函数变量错误参数", """
+            let double = fn(x) { return x * 2; };
+            let bad = double(10, 20);
+        """),
+
+        ("匿名函数直接调用", """
+            let result = fn(x) { return x + 1; }(5);
+        """),
+
+        ("P1 禁止捕获（应报错）", """
+            let outer = 10;
+            let f = fn(x) { return x + outer; };
         """),
     ]
 

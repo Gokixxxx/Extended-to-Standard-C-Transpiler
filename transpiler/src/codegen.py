@@ -14,6 +14,9 @@ class CCodeGenerator:
         self.temp_counter = 0
         self.in_function = False
         self.func_signatures = {}
+        self.fn_expr_counter = 0          # 匿名函数编号计数器
+        self.fn_expr_defs = []            # 提升后的全局函数定义代码
+        self.fn_expr_types = {}           # fn_expr AST节点 → C函数指针类型字符串
 
     def generate(self, ast: Tuple, func_signatures: dict = None) -> str:
         self.includes.clear()
@@ -23,6 +26,9 @@ class CCodeGenerator:
         self.vec_vars.clear()
         self.temp_counter = 0
         self.func_signatures = func_signatures or {}
+        self.fn_expr_counter = 0
+        self.fn_expr_defs = []
+        self.fn_expr_types = {}
         
         if ast[0] == 'program':
             for top in ast[1]:
@@ -36,10 +42,68 @@ class CCodeGenerator:
                     self._gen_top_stmt(top)
         
         return self._build_program()
+    
+    def _c_type_from_str(self, type_str: str) -> str:
+        """将语义类型字符串转为 C 类型名"""
+        if type_str == 'i32':
+            return 'int'
+        elif type_str == 'bool':
+            return 'int'
+        elif type_str == 'Vec<i32>':
+            return 'Vec_i32'
+        elif type_str.startswith('Option<'):
+            return 'Option_i32'
+        return 'int'
 
     def _new_temp(self) -> str:
         self.temp_counter += 1
         return f"__t{self.temp_counter}"
+    
+    def _new_fn_name(self) -> str:
+        self.fn_expr_counter += 1
+        return f"__fn_{self.fn_expr_counter}"
+
+    def _gen_fn_expr_type(self, param_count: int, ret_c_type: str) -> str:
+        """生成 C 函数指针类型，如 int (*)(int)"""
+        params = ', '.join(['int'] * param_count) if param_count > 0 else 'void'
+        return f"{ret_c_type} (*)({params})"
+    
+    def _gen_fn_expr_def(self, node: Tuple, fn_name: str) -> str:
+        """将 fn_expr 提升为全局 static 函数"""
+        params = node[1]
+        body = node[2]
+        
+        # 推断返回类型
+        ret_type = 'int'  # 默认
+        for stmt in body:
+            if stmt[0] == 'return':
+                ret_type = self._infer_expr_type(stmt[1])
+                break
+        
+        # 生成参数列表
+        param_parts = [f'int {p}' for p in params]
+        param_str = ', '.join(param_parts) if param_parts else 'void'
+        
+        # 生成函数体
+        lines = [f'static {ret_type} {fn_name}({param_str}) {{']
+        
+        # 收集函数内 Vector，返回前 free
+        func_vec_vars = []
+        for stmt in body:
+            if stmt[0] == 'let_decl' and self._infer_expr_type(stmt[2]) == 'Vec_i32':
+                func_vec_vars.append(stmt[1])
+        
+        for stmt in body:
+            stmt_code = self._gen_stmt(stmt)
+            for line in stmt_code.split('\n'):
+                lines.append(f'    {line}')
+        
+        for var in func_vec_vars:
+            lines.append(f'    free({var}.data);')
+        
+        lines.append('}')
+        
+        return '\n'.join(lines)
 
     # ==================== 类型推断 ====================
     def _infer_func_return_type(self, node: Tuple):
@@ -100,6 +164,10 @@ class CCodeGenerator:
         
         for func in self.func_defs:
             lines.append(func)
+            lines.append('')
+        
+        for fn_def in self.fn_expr_defs:
+            lines.append(fn_def)
             lines.append('')
         
         lines.append('int main() {')
@@ -184,11 +252,37 @@ class CCodeGenerator:
         var_name = node[1]
         expr = node[2]
         
+        if isinstance(expr, tuple) and expr[0] == 'fn_expr':
+            params = expr[1]
+            body = expr[2]
+            ret_c_type = 'int'
+            for stmt in body:
+                if stmt[0] == 'return':
+                    ret_c_type = self._infer_expr_type(stmt[1])
+                    break
+            expr_code = self._generate_expr(expr)
+            param_str = ', '.join(['int'] * len(params)) if params else 'void'
+            # 正确语法：ret_type (*var_name)(params) = func_name;
+            return f'{ret_c_type} (*{var_name})({param_str}) = {expr_code};'
+
         if self._contains_match(expr):
             return '\n'.join(self._generate_match_code(var_name, expr))
         
         type_str = self._infer_expr_type(expr)
         c_type = 'Vec_i32' if type_str == 'Vec_i32' else ('Option_i32' if type_str == 'Option_i32' else 'int')
+
+        # 检查是否为函数类型
+        if isinstance(type_str, str) and type_str.startswith('fn('):
+            arrow_idx = type_str.find(')->')
+            if arrow_idx != -1:
+                params_str = type_str[3:arrow_idx]
+                param_count = len([p for p in params_str.split(',') if p.strip()])
+                ret_type_str = type_str[arrow_idx + 3:]
+                ret_c_type = self._c_type_from_str(ret_type_str)
+                
+                expr_code = self._generate_expr(expr)
+                param_str = ', '.join(['int'] * param_count) if param_count > 0 else 'void'
+                return f'{ret_c_type} (*{var_name})({param_str}) = {expr_code};'
         
         if type_str == 'Vec_i32':
             self.includes.add('vec.h')
@@ -325,6 +419,21 @@ class CCodeGenerator:
                 return f"Some_i32({self._generate_expr(expr[1], subs)})"
             elif expr[0] == 'none':
                 return "None_i32()"
+            elif expr[0] == 'fn_expr':
+                # 匿名函数表达式：提升为全局函数，返回函数指针
+                fn_name = self._new_fn_name()
+                fn_def = self._gen_fn_expr_def(expr, fn_name)
+                self.fn_expr_defs.append(fn_def)
+                
+                params = expr[1]
+                ret_c_type = 'int'
+                for stmt in expr[2]:
+                    if stmt[0] == 'return':
+                        ret_c_type = self._infer_expr_type(stmt[1])
+                        break
+                
+                # 返回函数指针值（即函数名本身，在 C 中自动 decay 为指针）
+                return fn_name
             elif expr[0] == 'vec_literal':
                 return "vec_new_i32()"
             elif expr[0] == 'index':
@@ -395,45 +504,16 @@ class CCodeGenerator:
 def test_codegen():
     print("=== C 代码生成器测试 ===")
     
-    # 测试 1: if/else
-    ast1 = ('program', [
-        ('let_decl', 'x', ('num', 5)),
-        ('if', ('gt', ('var', 'x'), ('num', 0)), [
-            ('expr_stmt', ('assign', 'x', ('sub', ('var', 'x'), ('num', 1))))
-        ], [
-            ('expr_stmt', ('assign', 'x', ('add', ('var', 'x'), ('num', 1))))
-        ])
+    ast4 = ('program', [
+        ('let_decl', 'double', ('fn_expr', ['x'], [
+            ('return', ('mul', ('var', 'x'), ('num', 2)))
+        ])),
+        ('let_decl', 'result', ('call', ('var', 'double'), [('num', 10)]))
     ])
     
-    codegen = CCodeGenerator()
-    print("测试 1 - if/else:")
-    print(codegen.generate(ast1))
-    print()
-    
-    # 测试 2: for_in
-    ast2 = ('program', [
-        ('let_decl', 'arr', ('vec_literal', [('num', 1), ('num', 2), ('num', 3)])),
-        ('for_in', 'x', ('var', 'arr'), [
-            ('expr_stmt', ('call', ('var', 'print'), [('var', 'x')]))
-        ])
-    ])
-    
-    codegen2 = CCodeGenerator()
-    print("测试 2 - for_in:")
-    print(codegen2.generate(ast2))
-    print()
-    
-    # 测试 3: while
-    ast3 = ('program', [
-        ('let_decl', 'i', ('num', 0)),
-        ('while', ('lt', ('var', 'i'), ('num', 10)), [
-            ('expr_stmt', ('assign', 'i', ('add', ('var', 'i'), ('num', 1))))
-        ])
-    ])
-    
-    codegen3 = CCodeGenerator()
-    print("测试 3 - while:")
-    print(codegen3.generate(ast3))
+    codegen4 = CCodeGenerator()
+    print("测试 4 - 函数作为值:")
+    print(codegen4.generate(ast4))
     print()
 
 

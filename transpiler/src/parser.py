@@ -272,23 +272,22 @@ class RustLikeParser(Parser):
     @_('expr IS_NONE')
     def expr(self, p):
         return ('is_none', p.expr)
+    
+    # ==================== 匿名函数表达式 ====================
+    @_('FN LPAREN param_list RPAREN LBRACE statements RBRACE')
+    def primary(self, p):
+        return ('fn_expr', p.param_list, p.statements)
+
+    @_('FN LPAREN RPAREN LBRACE statements RBRACE')
+    def primary(self, p):
+        return ('fn_expr', [], p.statements)
 
 if __name__ == '__main__':
     lexer = RustLikeLexer()
     parser = RustLikeParser()
     
     code ='''
-    if x > 0 {
-        return 1;
-    } else {
-        return 0;
-    }
-    for x in arr {
-        print(x);
-    }
-    while i < 10 {
-        i = i + 1;
-    }
+    let double = fn(x) { return x * 2; };
     '''
     
     print("Parsing code:")

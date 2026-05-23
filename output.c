@@ -14,22 +14,20 @@ Option_i32 find(Vec_i32 arr, int target) {
     return None_i32();
 }
 
-int mytest(void) {
+static int __fn_1(int x) {
+    return (x * 2);
+}
+
+int main() {
+    int (*double_num)(int) = __fn_1;
+    int result = double_num(2);
     Vec_i32 g = vec_new_i32();
     vec_push_i32(&g, 1);
     vec_push_i32(&g, 3);
     vec_push_i32(&g, 5);
     vec_push_i32(&g, 2);
     vec_push_i32(&g, 4);
-    Option_i32 result1 = find(g, 3);
-    Vec_i32 __t2 = vec_new_i32();
-    vec_push_i32(&__t2, 1);
-    vec_push_i32(&__t2, 2);
-    vec_push_i32(&__t2, 3);
-    Option_i32 result2 = find(__t2, 5);
+    Option_i32 result1 = find(g, result);
     free(g.data);
-}
-
-int main() {
     return 0;
 }

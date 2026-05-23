@@ -94,6 +94,20 @@ def test_compiler():
         print(f"错误: {e}")
     print()
 
+    # 测试用例5: 函数作为值
+    print("测试 5 - 函数作为值:")
+    source5 = """
+    let double = fn(x) { return x * 2; };
+    let result = double(10);
+    """
+    compiler5 = Compiler()
+    try:
+        c_code5 = compiler5.compile(source5)
+        print(c_code5)
+    except Exception as e:
+        print(f"错误: {e}")
+    print()
+
 
 def main():
     """命令行接口"""
