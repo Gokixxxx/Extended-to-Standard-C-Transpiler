@@ -11,6 +11,7 @@ class SemanticAnalyzer:
         self.errors: List[str] = []
         self.warnings: List[str] = []
         self.current_func: Optional[str] = None
+        self.deferred_funcs = []
 
     def reset(self):
         self.symbol_table = [{}]
@@ -18,6 +19,7 @@ class SemanticAnalyzer:
         self.errors = []
         self.warnings = []
         self.current_func = None
+        self.deferred_funcs = []
 
     # ============ 作用域管理 ============
     def enter_scope(self):
@@ -44,13 +46,98 @@ class SemanticAnalyzer:
     # ============ 主分析入口 ============
     def analyze(self, ast: Tuple) -> bool:
         self.reset()
-
         if ast is None:
             self.errors.append("Error: parse error, AST is None")
             return False
         
-        self.visit(ast)
+        # 第一遍：收集所有函数签名
+        if ast[0] == 'program':
+            for top in ast[1]:
+                if top[0] == 'func_def':
+                    func_name = top[1]
+                    params = top[2]
+                    self.func_table[func_name] = {
+                        'params': ['unknown'] * len(params),
+                        'return_type': 'unknown'
+                    }
+        
+        # 第二遍：扫描所有调用节点（包括嵌套在函数体内的），推断参数类型
+        self._collect_calls(ast)
+        
+        # 第三遍：分析所有函数体
+        if ast[0] == 'program':
+            for top in ast[1]:
+                if top[0] == 'func_def':
+                    self._analyze_func_body(top)
+        
         return len(self.errors) == 0
+    
+    def _collect_calls(self, node: Any):
+        """递归扫描 AST，找到所有 call 节点并推断参数类型"""
+        if isinstance(node, tuple):
+            if node[0] == 'call':
+                # 处理这个调用，推断参数类型
+                self._infer_call_types(node)
+            
+            # 递归扫描所有子节点
+            for child in node[1:]:
+                self._collect_calls(child)
+                
+        elif isinstance(node, list):
+            for item in node:
+                self._collect_calls(item)
+    
+    def _infer_call_types(self, node: Tuple):
+        """只推断参数类型，不检查数量或类型一致性"""
+        callee_node = node[1]
+        args = node[2]
+
+        if callee_node[0] != 'var':
+            return
+
+        func_name = callee_node[1]
+        func_info = self.func_table.get(func_name)
+        if func_info is None:
+            return
+
+        for i, arg in enumerate(args):
+            arg_type = self._quick_infer_type(arg)
+            if i < len(func_info['params']):
+                if func_info['params'][i] == 'unknown':
+                    func_info['params'][i] = arg_type
+    
+    def _quick_infer_type(self, node: Any) -> str:
+        """快速推断类型，不报错，用于参数类型推断"""
+        if not isinstance(node, tuple):
+            return 'int'
+        
+        op = node[0]
+        if op == 'num':
+            return 'i32'
+        elif op == 'vec_literal':
+            return 'Vec<i32>'
+        elif op == 'some':
+            inner = self._quick_infer_type(node[1])
+            return f'Option<{inner}>'
+        elif op == 'none':
+            return 'Option<i32>'
+        elif op == 'var':
+            return self.lookup(node[1]) or 'unknown'
+        elif op in ('add', 'sub', 'mul', 'div'):
+            return 'i32'
+        elif op in ('eq', 'neq', 'gt', 'lt', 'gte', 'lte'):
+            return 'bool'
+        elif op == 'call':
+            func_name = node[1][1] if node[1][0] == 'var' else ''
+            func_info = self.func_table.get(func_name)
+            return func_info['return_type'] if func_info else 'unknown'
+        elif op == 'index':
+            return 'i32'
+        elif op == 'method_call':
+            if node[2] in ('len', 'pop'):
+                return 'i32'
+            return 'void'
+        return 'unknown'
 
     def visit(self, node: Any):
         if node is None:
@@ -64,7 +151,7 @@ class SemanticAnalyzer:
                     self.visit(top)
 
             elif node_type == 'func_def':
-                self.visit_func_def(node)
+                pass
 
             elif node_type == 'let_decl':
                 self.visit_let_decl(node)
@@ -193,23 +280,21 @@ class SemanticAnalyzer:
         self.exit_scope()
 
     # ============ 函数定义 ============
-    def visit_func_def(self, node: Tuple):
+    def _analyze_func_body(self, node: Tuple):
         func_name = node[1]
         params = node[2]
         body = node[3]
-
-        param_types = ['i32'] * len(params)
-        self.func_table[func_name] = {
-            'params': param_types,
-            'return_type': 'unknown'
-        }
 
         prev_func = self.current_func
         self.current_func = func_name
         self.enter_scope()
 
-        for param in params:
-            self.declare(param, 'i32')
+        func_info = self.func_table[func_name]
+        for i, param in enumerate(params):
+            param_type = func_info['params'][i] if i < len(func_info['params']) else 'unknown'
+            if param_type == 'unknown':
+                param_type = 'i32'
+            self.declare(param, param_type)
 
         for stmt in body:
             self.visit(stmt)
@@ -256,6 +341,13 @@ class SemanticAnalyzer:
             self.errors.append(f"错误: 未定义的函数 '{func_name}'")
             return 'unknown'
 
+        # 推断参数类型（如果尚未确定）
+        for i, arg in enumerate(args):
+            arg_type = self.visit_expr(arg)
+            if i < len(func_info['params']):
+                if func_info['params'][i] == 'unknown':
+                    func_info['params'][i] = arg_type
+
         if len(args) != len(func_info['params']):
             self.errors.append(
                 f"错误: 函数 '{func_name}' 期望 {len(func_info['params'])} 个参数，实际 {len(args)} 个"
@@ -269,7 +361,7 @@ class SemanticAnalyzer:
                 )
 
         return func_info['return_type']
-
+    
     # ============ 索引访问 ============
     def visit_index(self, node: Tuple):
         obj_expr = node[1]

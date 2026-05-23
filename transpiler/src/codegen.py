@@ -13,14 +13,16 @@ class CCodeGenerator:
         self.vec_vars = set()
         self.temp_counter = 0
         self.in_function = False
+        self.func_signatures = {}
 
-    def generate(self, ast: Tuple) -> str:
+    def generate(self, ast: Tuple, func_signatures: dict = None) -> str:
         self.includes.clear()
         self.func_defs.clear()
         self.main_stmts.clear()
         self.func_return_types.clear()
         self.vec_vars.clear()
         self.temp_counter = 0
+        self.func_signatures = func_signatures or {}
         
         if ast[0] == 'program':
             for top in ast[1]:
@@ -92,12 +94,9 @@ class CCodeGenerator:
     # ==================== 程序组装 ====================
     def _build_program(self) -> str:
         lines = []
-        if 'option.h' in self.includes:
-            lines.append('#include "option.h"')
-            lines.append('')
-        if 'vec.h' in self.includes:
-            lines.append('#include "vec.h"')
-            lines.append('')
+        lines.append('#include "option.h"')
+        lines.append('#include "vec.h"')
+        lines.append('')
         
         for func in self.func_defs:
             lines.append(func)
@@ -123,7 +122,20 @@ class CCodeGenerator:
         body = node[3]
         ret_type = self.func_return_types.get(func_name, 'int')
         
-        param_str = ', '.join(f'int {p}' for p in params) if params else 'void'
+        func_sig = self.func_signatures.get(func_name, {})
+        sig_params = func_sig.get('params', [])
+
+        if any(i < len(sig_params) and sig_params[i] == 'Vec<i32>' for i in range(len(params))):
+            self.includes.add('vec.h')
+        
+        param_parts = []
+        for i, p in enumerate(params):
+            if i < len(sig_params) and sig_params[i] == 'Vec<i32>':
+                param_parts.append(f'Vec_i32 {p}')
+            else:
+                param_parts.append(f'int {p}')
+        
+        param_str = ', '.join(param_parts) if param_parts else 'void'
         
         # 收集本函数内声明的 Vector，返回前 free
         func_vec_vars = []
@@ -176,6 +188,7 @@ class CCodeGenerator:
             return '\n'.join(self._generate_match_code(var_name, expr))
         
         type_str = self._infer_expr_type(expr)
+        c_type = 'Vec_i32' if type_str == 'Vec_i32' else ('Option_i32' if type_str == 'Option_i32' else 'int')
         
         if type_str == 'Vec_i32':
             self.includes.add('vec.h')
@@ -187,16 +200,18 @@ class CCodeGenerator:
                     elem_code = self._generate_expr(elem)
                     lines.append(f'vec_push_i32(&{var_name}, {elem_code});')
                 return '\n'.join(lines)
-            else:
-                expr_code = self._generate_expr(expr)
-                return f'Vec_i32 {var_name} = {expr_code};'
-        elif type_str == 'Option_i32':
-            self.includes.add('option.h')
-            expr_code = self._generate_expr(expr)
-            return f'Option_i32 {var_name} = {expr_code};'
-        else:
-            expr_code = self._generate_expr(expr)
-            return f'int {var_name} = {expr_code};'
+        
+        expr_code = self._generate_expr(expr)
+        
+        # 处理包含前置语句的表达式（如 call 中的 vec_literal 参数）
+        if '\n' in expr_code:
+            parts = expr_code.split('\n')
+            pre_stmts = parts[:-1]
+            actual_expr = parts[-1]
+            lines = pre_stmts + [f'{c_type} {var_name} = {actual_expr};']
+            return '\n'.join(lines)
+        
+        return f'{c_type} {var_name} = {expr_code};'
 
     def _contains_match(self, expr: Any) -> bool:
         if isinstance(expr, tuple):
@@ -341,8 +356,25 @@ class CCodeGenerator:
                 return f"({left} {op_map[expr[0]]} {right})"
             elif expr[0] == 'call':
                 callee = self._generate_expr(expr[1], subs)
-                args = [self._generate_expr(a, subs) for a in expr[2]]
-                return f"{callee}({', '.join(args)})"
+                arg_codes = []
+                pre_stmts = []
+                for a in expr[2]:
+                    if a[0] == 'vec_literal':
+                        tmp = self._new_temp()
+                        self.includes.add('vec.h')
+                        pre_stmts.append(f'Vec_i32 {tmp} = vec_new_i32();')
+                        for elem in a[1]:
+                            elem_code = self._generate_expr(elem, subs)
+                            pre_stmts.append(f'vec_push_i32(&{tmp}, {elem_code});')
+                        arg_codes.append(tmp)
+                    else:
+                        arg_codes.append(self._generate_expr(a, subs))
+                
+                call_code = f"{callee}({', '.join(arg_codes)})"
+                
+                if pre_stmts:
+                    return '\n'.join(pre_stmts + [call_code])
+                return call_code
             elif expr[0] == 'assign':
                 lhs = expr[1]
                 rhs = self._generate_expr(expr[2], subs)

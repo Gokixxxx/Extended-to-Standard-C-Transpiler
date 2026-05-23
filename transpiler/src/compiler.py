@@ -29,7 +29,7 @@ class Compiler:
                 raise RuntimeError("Semantic analysis failed")
             
             # generate code
-            c_code = self.codegen.generate(ast)
+            c_code = self.codegen.generate(ast, func_signatures=self.analyzer.func_table)
             return c_code
             
         except Exception as e:
