@@ -24,6 +24,7 @@ class CCodeGenerator:
         self.closure_env_vars = set()     # 需要 free 的闭包变量（顶层）
         self.func_returns_closure = set()
         self.temp_closures = []   # 需要 free 的临时闭包变量名
+        self.current_func_params = set()  # 当前命名函数的参数名（避免与顶层闭包变量冲突）
 
     def generate(self, ast: Tuple, func_signatures: dict = None, fn_expr_captures: dict = None) -> str:
         self.includes.clear()
@@ -44,6 +45,7 @@ class CCodeGenerator:
         self.closure_env_vars = set()
         self.func_returns_closure = set()
         self.temp_closures = []
+        self.current_func_params = set()
         self.fn_expr_is_closure = {
             node_id: bool(caps) 
             for node_id, caps in self.fn_expr_captures.items()
@@ -175,7 +177,11 @@ class CCodeGenerator:
             return False
         op = expr[0]
         if op == 'var':
-            return expr[1] in self.closure_vars
+            name = expr[1]
+            # 如果是当前命名函数的参数，优先认为是普通参数（非闭包）
+            if name in getattr(self, 'current_func_params', set()):
+                return False
+            return name in self.closure_vars
         elif op == 'fn_expr':
             return self._is_closure_expr(expr)
         elif op == 'call':
@@ -380,6 +386,9 @@ class CCodeGenerator:
         body = node[3]
         ret_type = self.func_return_types.get(func_name, 'int')
         
+        # 记录当前函数参数，避免与顶层闭包变量同名冲突
+        self.current_func_params = set(params)
+        
         func_sig = self.func_signatures.get(func_name, {})
         sig_params = func_sig.get('params', [])
 
@@ -422,6 +431,7 @@ class CCodeGenerator:
         
         lines.append('}')
         self.in_function = False
+        self.current_func_params = set()  # 清理
         return '\n'.join(lines)
 
     # ==================== 顶层语句 ====================

@@ -7,8 +7,8 @@ let doubled = fn(x) {
 };
 let result = doubled(10);
 
-fn apply(func, x) {
-    return func(x);
+fn apply(f, x) {
+    return f(x);
 }
 let add5 = fn(y) => 5 + y;
 let applied = apply(add5, 10);

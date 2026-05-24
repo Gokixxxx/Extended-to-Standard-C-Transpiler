@@ -18,8 +18,8 @@ struct __env_6 {
     int base;
 };
 
-int apply(int (*func)(int), int x) {
-    return func(x);
+int apply(int (*f)(int), int x) {
+    return f(x);
 }
 
 static int __fn_1(void *__env, int x) {
@@ -108,9 +108,9 @@ int main() {
     int rc = fc.fn(fc.env, 5);
     free(v.data);
     free(arr.data);
-    free(fa_env);
+    free(fc_env);
     free(f_env);
     free(fb_env);
-    free(fc_env);
+    free(fa_env);
     return 0;
 }
