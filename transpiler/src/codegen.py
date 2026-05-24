@@ -162,6 +162,7 @@ class CCodeGenerator:
         lines = []
         lines.append('#include "option.h"')
         lines.append('#include "vec.h"')
+        lines.append('#include "closure.h"')
         lines.append('')
         
         for func in self.func_defs:

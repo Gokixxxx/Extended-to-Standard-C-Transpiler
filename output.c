@@ -1,5 +1,6 @@
 #include "option.h"
 #include "vec.h"
+#include "closure.h"
 
 Option_i32 find_next(Vec_i32 arr, int target) {
     {
