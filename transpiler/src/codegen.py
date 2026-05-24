@@ -18,6 +18,12 @@ class CCodeGenerator:
         self.fn_expr_defs = []            # 提升后的全局函数定义代码
         self.fn_expr_types = {}           # fn_expr AST节点 → C函数指针类型字符串
         self.fn_expr_captures = {}
+        self.env_struct_defs = []         # Env 结构体定义代码
+        self.closure_vars = set()         # 绑定闭包的变量名
+        self.closure_return_funcs = set()   # 返回闭包的命名函数
+        self.closure_env_vars = set()     # 需要 free 的闭包变量（顶层）
+        self.func_returns_closure = set()
+        self.temp_closures = []   # 需要 free 的临时闭包变量名
 
     def generate(self, ast: Tuple, func_signatures: dict = None, fn_expr_captures: dict = None) -> str:
         self.includes.clear()
@@ -31,6 +37,18 @@ class CCodeGenerator:
         self.fn_expr_defs = []
         self.fn_expr_types = {}
         self.fn_expr_captures = fn_expr_captures or {}
+
+        self.env_struct_defs = []
+        self.closure_vars = set()
+        self.closure_return_funcs = set()
+        self.closure_env_vars = set()
+        self.func_returns_closure = set()
+        self.temp_closures = []
+        self.fn_expr_is_closure = {
+            node_id: bool(caps) 
+            for node_id, caps in self.fn_expr_captures.items()
+        }
+        self._pre_scan(ast)
         
         if ast[0] == 'program':
             for top in ast[1]:
@@ -56,6 +74,114 @@ class CCodeGenerator:
         elif type_str.startswith('Option<'):
             return 'Option_i32'
         return 'int'
+    
+    # ==================== 3.3/3.4 闭包辅助方法 ====================
+    def _pre_scan(self, node):
+        """预扫描 AST，标记闭包变量和返回闭包的函数"""
+        if not isinstance(node, tuple):
+            return
+        op = node[0]
+        if op == 'program':
+            for top in node[1]:
+                self._pre_scan(top)
+        elif op == 'func_def':
+            func_name = node[1]
+            func_info = self.func_signatures.get(func_name, {})
+            ret_type = func_info.get('return_type', 'int')
+            if isinstance(ret_type, str) and ret_type.startswith('fn('):
+                self.func_returns_closure.add(func_name)
+            body = node[3]
+            for stmt in body:
+                if stmt[0] == 'return':
+                    if self._is_closure_expr(stmt[1]):
+                        self.closure_return_funcs.add(func_name)
+                    break
+            # 递归扫描 body
+            for stmt in body:
+                self._pre_scan(stmt)
+        elif op == 'let_decl':
+            var_name = node[1]
+            expr = node[2]
+            if self._is_closure_expr(expr):
+                self.closure_vars.add(var_name)
+            # 新增：检查函数变量是否返回闭包
+            expr_type = self._infer_expr_type(expr)
+            if isinstance(expr_type, str) and expr_type.startswith('fn('):
+                parsed = self._parse_fn_type(expr_type)
+                if parsed:
+                    _, ret_type = parsed
+                    if isinstance(ret_type, str) and ret_type.startswith('fn('):
+                        self.func_returns_closure.add(var_name)
+            self._pre_scan(expr)
+        elif op == 'expr_stmt':
+            self._pre_scan(node[1])
+        elif op == 'if':
+            self._pre_scan(node[1])
+            for s in node[2]: self._pre_scan(s)
+            for s in node[3]: self._pre_scan(s)
+        elif op == 'for_in':
+            self._pre_scan(node[2])
+            for s in node[3]: self._pre_scan(s)
+        elif op == 'while':
+            self._pre_scan(node[1])
+            for s in node[2]: self._pre_scan(s)
+        elif op == 'return':
+            self._pre_scan(node[1])
+
+    def _is_closure_expr(self, expr):
+        """判断表达式是否为有捕获的 fn_expr"""
+        return (isinstance(expr, tuple) and expr[0] == 'fn_expr' 
+                and self.fn_expr_is_closure.get(id(expr), False))
+
+    def _closure_type(self, param_count: int) -> str:
+        """根据参数数量返回闭包结构体类型名"""
+        return 'Closure_i32' + '_i32' * param_count
+
+    def _parse_fn_type(self, type_str: str):
+        """解析 'fn(i32,i32)->i32' 为 (['i32','i32'], 'i32')"""
+        if not type_str or not type_str.startswith('fn('):
+            return None
+        arrow_idx = type_str.find(')->')
+        if arrow_idx == -1:
+            return None
+        params = [p.strip() for p in type_str[3:arrow_idx].split(',') if p.strip()]
+        ret = type_str[arrow_idx + 3:]
+        return (params, ret)
+
+    def _expr_returns_closure(self, expr) -> bool:
+        if not isinstance(expr, tuple):
+            return False
+        op = expr[0]
+        if op == 'fn_expr':
+            return self._is_closure_expr(expr)
+        elif op == 'var':
+            name = expr[1]
+            if name in self.closure_vars:
+                return True
+            if name in self.func_returns_closure:
+                return True
+            func_info = self.func_signatures.get(name, {})
+            ret_type = func_info.get('return_type', 'int')
+            if isinstance(ret_type, str) and ret_type.startswith('fn('):
+                return True
+            return False
+        elif op == 'call':
+            return self._expr_returns_closure(expr[1])
+        return False
+    
+    def _is_closure_callee(self, expr) -> bool:
+        """判断 callee 本身是否是闭包变量（需要用 .fn(.env, ...) 调用）"""
+        if not isinstance(expr, tuple):
+            return False
+        op = expr[0]
+        if op == 'var':
+            return expr[1] in self.closure_vars
+        elif op == 'fn_expr':
+            return self._is_closure_expr(expr)
+        elif op == 'call':
+            # 如 add(3) 返回闭包，则 add(3)(4) 的外层 callee 是闭包
+            return self._expr_returns_closure(expr)
+        return False
 
     def _new_temp(self) -> str:
         self.temp_counter += 1
@@ -71,23 +197,42 @@ class CCodeGenerator:
         return f"{ret_c_type} (*)({params})"
     
     def _gen_fn_expr_def(self, node: Tuple, fn_name: str) -> str:
-        """将 fn_expr 提升为全局 static 函数"""
+        """将 fn_expr 提升为全局 static 函数（支持闭包 env）"""
         params = node[1]
         body = node[2]
+        captures = self.fn_expr_captures.get(id(node), [])
         
         # 推断返回类型
-        ret_type = 'int'  # 默认
+        ret_type = 'int'
         for stmt in body:
             if stmt[0] == 'return':
                 ret_type = self._infer_expr_type(stmt[1])
+                if isinstance(ret_type, str) and ret_type.startswith('fn('):
+                    parsed = self._parse_fn_type(ret_type)
+                    if parsed:
+                        ret_params, _ = parsed
+                        ret_type = self._closure_type(len(ret_params))
+                        ret_type = self._closure_type(len(params))
                 break
         
-        # 生成参数列表
-        param_parts = [f'int {p}' for p in params]
-        param_str = ', '.join(param_parts) if param_parts else 'void'
+        has_captures = bool(captures)
+        fn_counter = int(fn_name.split('_')[-1])
         
-        # 生成函数体
-        lines = [f'static {ret_type} {fn_name}({param_str}) {{']
+        if not has_captures:
+            # 无捕获：保持原有 ABI
+            param_parts = [f'int {p}' for p in params]
+            param_str = ', '.join(param_parts) if param_parts else 'void'
+            lines = [f'static {ret_type} {fn_name}({param_str}) {{']
+        else:
+            # 有捕获：增加 void *__env 首参数
+            env_struct_name = f'__env_{fn_counter}'
+            param_parts = ['void *__env'] + [f'int {p}' for p in params]
+            param_str = ', '.join(param_parts)
+            lines = [f'static {ret_type} {fn_name}({param_str}) {{']
+            lines.append(f'    struct {env_struct_name} *env = (struct {env_struct_name} *)__env;')
+            # 为捕获变量创建局部别名（让 body 代码无需改动）
+            for cap in captures:
+                lines.append(f'    int {cap} = env->{cap};')
         
         # 收集函数内 Vector，返回前 free
         func_vec_vars = []
@@ -104,7 +249,6 @@ class CCodeGenerator:
             lines.append(f'    free({var}.data);')
         
         lines.append('}')
-        
         return '\n'.join(lines)
 
     # ==================== 类型推断 ====================
@@ -113,7 +257,15 @@ class CCodeGenerator:
         body = node[3]
         for stmt in body:
             if stmt[0] == 'return':
-                self.func_return_types[func_name] = self._infer_expr_type(stmt[1])
+                ret_expr = stmt[1]
+                ret_type = self._infer_expr_type(ret_expr)
+                # 新增：函数类型 → 闭包结构体类型
+                if isinstance(ret_type, str) and ret_type.startswith('fn('):
+                    parsed = self._parse_fn_type(ret_type)
+                    if parsed:
+                        params, _ = parsed
+                        ret_type = self._closure_type(len(params))
+                self.func_return_types[func_name] = ret_type
                 return
         self.func_return_types[func_name] = 'int'
 
@@ -139,10 +291,6 @@ class CCodeGenerator:
             return 'int'
         elif op == 'vec_literal':
             return 'Vec_i32'
-        elif op == 'call':
-            if expr[1][0] == 'var':
-                return self.func_return_types.get(expr[1][1], 'int')
-            return 'int'
         elif op == 'method_call':
             if expr[2] in ('len', 'pop'):
                 return 'int'
@@ -155,6 +303,30 @@ class CCodeGenerator:
             return 'int'
         elif op == 'match':
             return 'int'
+        elif op == 'call':
+            if expr[1][0] == 'var':
+                func_name = expr[1][1]
+                func_info = self.func_signatures.get(func_name, {})
+                ret_type = func_info.get('return_type', 'int')
+                if isinstance(ret_type, str) and ret_type.startswith('fn('):
+                    parsed = self._parse_fn_type(ret_type)
+                    if parsed:
+                        params, _ = parsed
+                        return self._closure_type(len(params))
+                return self.func_return_types.get(func_name, 'int')
+            return 'int'
+        
+        elif op == 'fn_expr':
+            params = expr[1]
+            body = expr[2]
+            ret_type = 'void'
+            for stmt in body:
+                if isinstance(stmt, tuple) and stmt[0] == 'return':
+                    ret_expr = stmt[1]
+                    ret_type = self._infer_expr_type(ret_expr)
+                    break
+            param_types = ['i32'] * len(params)
+            return f"fn({','.join(param_types)})->{ret_type}"
         return 'int'
 
     # ==================== 程序组装 ====================
@@ -165,10 +337,17 @@ class CCodeGenerator:
         lines.append('#include "closure.h"')
         lines.append('')
         
+        # 先输出 Env 结构体（函数定义依赖它们）
+        for env_def in self.env_struct_defs:
+            lines.append(env_def)
+            lines.append('')
+        
+        # 命名函数定义
         for func in self.func_defs:
             lines.append(func)
             lines.append('')
         
+        # 提升的匿名函数定义
         for fn_def in self.fn_expr_defs:
             lines.append(fn_def)
             lines.append('')
@@ -180,6 +359,14 @@ class CCodeGenerator:
         
         for var in self.vec_vars:
             lines.append(f"    free({var}.data);")
+        
+        # 释放顶层闭包 Env
+        for var in self.closure_env_vars:
+            lines.append(f"    free({var}_env);")
+
+        # 释放临时闭包 Env
+        for tmp in self.temp_closures:
+            lines.append(f"    free({tmp}.env);")
         
         lines.append('    return 0;')
         lines.append('}')
@@ -201,17 +388,26 @@ class CCodeGenerator:
         
         param_parts = []
         for i, p in enumerate(params):
-            if i < len(sig_params) and sig_params[i] == 'Vec<i32>':
-                param_parts.append(f'Vec_i32 {p}')
+            if i < len(sig_params):
+                param_type = sig_params[i]
+                if param_type == 'Vec<i32>':
+                    param_parts.append(f'Vec_i32 {p}')
+                elif isinstance(param_type, str) and param_type.startswith('fn('):
+                    parsed = self._parse_fn_type(param_type)
+                    if parsed:
+                        fn_params, _ = parsed
+                        param_parts.append(f'int (*{p})({", ".join(["int"] * len(fn_params))})')
+                    else:
+                        param_parts.append(f'int {p}')
+                else:
+                    param_parts.append(f'int {p}')
             else:
                 param_parts.append(f'int {p}')
-        
+                
         param_str = ', '.join(param_parts) if param_parts else 'void'
         
-        # 收集本函数内声明的 Vector，返回前 free
         func_vec_vars = []
-        
-        self.in_function = True           # 进入函数
+        self.in_function = True
         lines = [f'{ret_type} {func_name}({param_str}) {{']
         for stmt in body:
             if stmt[0] == 'let_decl' and self._infer_expr_type(stmt[2]) == 'Vec_i32':
@@ -225,8 +421,7 @@ class CCodeGenerator:
             lines.append(f'    free({var}.data);')
         
         lines.append('}')
-        self.in_function = False          # 退出函数
-        
+        self.in_function = False
         return '\n'.join(lines)
 
     # ==================== 顶层语句 ====================
@@ -238,6 +433,11 @@ class CCodeGenerator:
             return self._gen_let(node)
         elif node[0] == 'return':
             expr_code = self._generate_expr(node[1])
+            if '\n' in expr_code:
+                parts = expr_code.split('\n')
+                pre_stmts = parts[:-1]
+                actual_expr = parts[-1]
+                return '\n'.join(pre_stmts + [f'return {actual_expr};'])
             return f'return {expr_code};'
         elif node[0] == 'expr_stmt':
             expr_code = self._generate_expr(node[1])
@@ -256,17 +456,50 @@ class CCodeGenerator:
         expr = node[2]
         
         if isinstance(expr, tuple) and expr[0] == 'fn_expr':
+            captures = self.fn_expr_captures.get(id(expr), [])
             params = expr[1]
             body = expr[2]
+            
+            # 推断返回类型
             ret_c_type = 'int'
             for stmt in body:
                 if stmt[0] == 'return':
                     ret_c_type = self._infer_expr_type(stmt[1])
+                    if isinstance(ret_c_type, str) and ret_c_type.startswith('fn('):
+                        parsed = self._parse_fn_type(ret_c_type)
+                        if parsed:
+                            params_ret, _ = parsed
+                            ret_c_type = self._closure_type(len(params_ret))
                     break
-            expr_code = self._generate_expr(expr)
-            param_str = ', '.join(['int'] * len(params)) if params else 'void'
-            # 正确语法：ret_type (*var_name)(params) = func_name;
-            return f'{ret_c_type} (*{var_name})({param_str}) = {expr_code};'
+            
+            fn_name = self._new_fn_name()
+            fn_counter = self.fn_expr_counter
+            fn_def = self._gen_fn_expr_def(expr, fn_name)
+            self.fn_expr_defs.append(fn_def)
+            
+            if not captures:
+                # 无捕获：函数指针
+                param_str = ', '.join(['int'] * len(params)) if params else 'void'
+                return f'{ret_c_type} (*{var_name})({param_str}) = {fn_name};'
+            else:
+                # 有捕获：闭包结构体
+                env_struct_name = f'__env_{fn_counter}'
+                fields = '\n    '.join([f'int {cap};' for cap in captures])
+                env_def = f'struct {env_struct_name} {{\n    {fields}\n}};'
+                self.env_struct_defs.append(env_def)
+                
+                lines = []
+                lines.append(f'struct {env_struct_name} *{var_name}_env = malloc(sizeof(struct {env_struct_name}));')
+                for cap in captures:
+                    lines.append(f'{var_name}_env->{cap} = {cap};')
+                
+                closure_type = self._closure_type(len(params))
+                lines.append(f'{closure_type} {var_name} = {{{var_name}_env, {fn_name}}};')
+                
+                if not self.in_function:
+                    self.closure_env_vars.add(var_name)
+                
+                return '\n'.join(lines)
 
         if self._contains_match(expr):
             return '\n'.join(self._generate_match_code(var_name, expr))
@@ -282,6 +515,11 @@ class CCodeGenerator:
                 param_count = len([p for p in params_str.split(',') if p.strip()])
                 ret_type_str = type_str[arrow_idx + 3:]
                 ret_c_type = self._c_type_from_str(ret_type_str)
+                if isinstance(ret_type_str, str) and ret_type_str.startswith('fn('):
+                    parsed = self._parse_fn_type(ret_type_str)
+                    if parsed:
+                        params_ret, _ = parsed
+                        ret_c_type = self._closure_type(len(params_ret))
                 
                 expr_code = self._generate_expr(expr)
                 param_str = ', '.join(['int'] * param_count) if param_count > 0 else 'void'
@@ -423,20 +661,35 @@ class CCodeGenerator:
             elif expr[0] == 'none':
                 return "None_i32()"
             elif expr[0] == 'fn_expr':
-                # 匿名函数表达式：提升为全局函数，返回函数指针
                 fn_name = self._new_fn_name()
+                fn_counter = self.fn_expr_counter
+                captures = self.fn_expr_captures.get(id(expr), [])
+                
                 fn_def = self._gen_fn_expr_def(expr, fn_name)
                 self.fn_expr_defs.append(fn_def)
                 
-                params = expr[1]
-                ret_c_type = 'int'
-                for stmt in expr[2]:
-                    if stmt[0] == 'return':
-                        ret_c_type = self._infer_expr_type(stmt[1])
-                        break
-                
-                # 返回函数指针值（即函数名本身，在 C 中自动 decay 为指针）
-                return fn_name
+                if not captures:
+                    return fn_name
+                else:
+                    # 生成 Env 结构体定义
+                    env_struct_name = f'__env_{fn_counter}'
+                    fields = '\n    '.join([f'int {cap};' for cap in captures])
+                    env_def = f'struct {env_struct_name} {{\n    {fields}\n}};'
+                    self.env_struct_defs.append(env_def)
+                    
+                    # 生成 Env 实例 + 闭包结构体
+                    env_name = self._new_temp()
+                    pre_stmts = [
+                        f'struct {env_struct_name} *{env_name} = malloc(sizeof(struct {env_struct_name}));'
+                    ]
+                    for cap in captures:
+                        pre_stmts.append(f'{env_name}->{cap} = {cap};')
+                    
+                    closure_type = self._closure_type(len(expr[1]))
+                    closure_name = self._new_temp()
+                    pre_stmts.append(f'{closure_type} {closure_name} = {{{env_name}, {fn_name}}};')
+                    
+                    return '\n'.join(pre_stmts + [closure_name])
             elif expr[0] == 'vec_literal':
                 return "vec_new_i32()"
             elif expr[0] == 'index':
@@ -467,10 +720,14 @@ class CCodeGenerator:
                 op_map = {'eq': '==', 'neq': '!=', 'gt': '>', 'lt': '<', 'gte': '>=', 'lte': '<='}
                 return f"({left} {op_map[expr[0]]} {right})"
             elif expr[0] == 'call':
-                callee = self._generate_expr(expr[1], subs)
+                callee_expr = expr[1]
+                args = expr[2]
+                # 判断 callee 是否为闭包
+                is_closure = self._is_closure_callee(callee_expr)
+                # 生成参数代码（支持 vec_literal 前置语句）
                 arg_codes = []
                 pre_stmts = []
-                for a in expr[2]:
+                for a in args:
                     if a[0] == 'vec_literal':
                         tmp = self._new_temp()
                         self.includes.add('vec.h')
@@ -480,9 +737,31 @@ class CCodeGenerator:
                             pre_stmts.append(f'vec_push_i32(&{tmp}, {elem_code});')
                         arg_codes.append(tmp)
                     else:
-                        arg_codes.append(self._generate_expr(a, subs))
+                        arg_code = self._generate_expr(a, subs)
+                        if '\n' in arg_code:
+                            parts = arg_code.split('\n')
+                            pre_stmts.extend(parts[:-1])
+                            arg_codes.append(parts[-1])
+                        else:
+                            arg_codes.append(arg_code) 
+                # 生成 callee 代码
+                callee_code = self._generate_expr(callee_expr, subs)
+                if is_closure and callee_expr[0] == 'call':
+                    tmp = self._new_temp()
+                    closure_type = self._closure_type(len(args))
+                    pre_stmts.append(f'{closure_type} {tmp} = {callee_code};')
+                    callee_code = tmp
+                    self.temp_closures.append(tmp)
+                if '\n' in callee_code:
+                    parts = callee_code.split('\n')
+                    pre_stmts.extend(parts[:-1])
+                    callee_code = parts[-1]
                 
-                call_code = f"{callee}({', '.join(arg_codes)})"
+                # 构建调用
+                if is_closure:
+                    call_code = f"{callee_code}.fn({callee_code}.env, {', '.join(arg_codes)})"
+                else:
+                    call_code = f"{callee_code}({', '.join(arg_codes)})"
                 
                 if pre_stmts:
                     return '\n'.join(pre_stmts + [call_code])

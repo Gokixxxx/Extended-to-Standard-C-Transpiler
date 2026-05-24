@@ -1,32 +1,45 @@
-fn find_next(arr, target) {
-    for x in arr {
-        if x > target {
-            return Some(x);
-        }
-    }
-    return None;
+let outer = 10;
+let f = fn(x) => outer + x;
+let r = f(5);
+
+let doubled = fn(x) {
+    return x * 2;
+};
+let result = doubled(10);
+
+fn apply(func, x) {
+    return func(x);
 }
+let add5 = fn(y) => 5 + y;
+let applied = apply(add5, 10);
 
-let double_num = fn(x) { return x * 2; };
-let result1 = double_num(5);
+let v = [1, 2, 3];
+v.push(4);
+let len = v.len();
+let first = v[0];
 
-let triple_num = fn x => x * 3;
-let result2 = triple_num(4);
-
-let result3 = fn(x) { return x + 1; }(10);
-
-let nums = [1, 3, 5, 2, 4];
-let first = nums[0];
-nums[1] = 10;
-let len = nums.len();
-
-let target = 3;
-let result4 = find_next(nums, target);
-
-let matched = match result4 {
-    Some(v) => v * 10,
+let opt = Some(42);
+let matched = match opt {
+    Some(v) => v + 1,
     None => 0
 };
 
-let found = is_some(result4);
-let missing = is_none(result4);
+let arr = [10, 20, 30];
+let sum = 0;
+for x in arr {
+    sum = sum + x;
+}
+
+let a = 1;
+let b = 2;
+let fa = fn(x) => a + x;
+let fb = fn(y) => b + y;
+let ra = fa(10);
+let rb = fb(20);
+
+let base = 100;
+let fc = fn(z) {
+    let local = 50;
+    return base + local + z;
+};
+let rc = fc(5);

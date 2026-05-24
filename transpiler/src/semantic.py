@@ -16,6 +16,7 @@ class SemanticAnalyzer:
         self._fn_expr_ret_type = 'void'
         self._predeclared: Dict[str, str] = {}
         self.fn_expr_captures: Dict[int, List[str]] = {}
+        self._fn_expr_depth = 0   # fn_expr 嵌套深度
 
     def reset(self):
         self.symbol_table = [{}]
@@ -26,6 +27,7 @@ class SemanticAnalyzer:
         self.deferred_funcs = []
         self._predeclared = {}
         self.fn_expr_captures.clear()
+        self._fn_expr_depth = 0
 
     # ============ 作用域管理 ============
     def enter_scope(self):
@@ -96,15 +98,46 @@ class SemanticAnalyzer:
         return len(self.errors) == 0
     
     def parse_fn_type(self, type_str: str):
-        """将 'fn(i32,i32)->i32' 解析为 (['i32', 'i32'], 'i32')，失败返回 None"""
         if not type_str or not type_str.startswith('fn('):
             return None
-        arrow_idx = type_str.find(')->')
-        if arrow_idx == -1:
+        
+        # 找与 "fn(" 匹配的 ")"，维护括号深度
+        depth = 1
+        i = 3  # 跳过前缀 "fn("
+        while i < len(type_str) and depth > 0:
+            if type_str[i] == '(':
+                depth += 1
+            elif type_str[i] == ')':
+                depth -= 1
+            i += 1
+        
+        # i 现在指向匹配 ')' 的下一个字符
+        if i >= len(type_str) or type_str[i:i+2] != '->':
             return None
-        params_str = type_str[3:arrow_idx]
-        ret_type = type_str[arrow_idx + 3:]
-        params = [p.strip() for p in params_str.split(',') if p.strip()]
+        
+        params_str = type_str[3:i-1]   # i-1 是 ')' 的位置
+        ret_type   = type_str[i+2:]
+        
+        # 解析参数列表（支持嵌套括号中的逗号）
+        params = []
+        depth = 0
+        current = ''
+        for ch in params_str:
+            if ch == '(':
+                depth += 1
+                current += ch
+            elif ch == ')':
+                depth -= 1
+                current += ch
+            elif ch == ',' and depth == 0:
+                if current.strip():
+                    params.append(current.strip())
+                current = ''
+            else:
+                current += ch
+        if current.strip():
+            params.append(current.strip())
+        
         return (params, ret_type)
 
     def _collect_calls(self, node: Any):
@@ -385,75 +418,36 @@ class SemanticAnalyzer:
     def visit_call(self, node: Tuple):
         callee_node = node[1]
         args = node[2]
-
-        func_info = None
-        func_name = None
-
-        # === 路径 1：通过变量名调用（顶层函数 或 函数变量）===
-        if callee_node[0] == 'var':
-            func_name = callee_node[1]
-            # 先查顶层函数表
-            func_info = self.func_table.get(func_name)
-            # 再查符号表（函数值变量）
-            if func_info is None:
-                var_type = self.lookup(func_name)
-                if var_type and var_type.startswith('fn('):
-                    parsed = self.parse_fn_type(var_type)
-                    if parsed:
-                        param_types, ret_type = parsed
-                        func_info = {'params': list(param_types), 'return_type': ret_type}
-                elif var_type == 'unknown':
-                    # P1 兜底：高阶函数参数类型未知时，假设为函数，仅警告
-                    self.warnings.append(f"警告: 函数参数 '{func_name}' 类型未知，跳过参数检查")
-                    return 'unknown'
-
-        # === 路径 2：直接调用匿名函数，如 fn(x){...}(10) ===
-        elif callee_node[0] == 'fn_expr':
-            params = callee_node[1]
-            body = callee_node[2]
-            self.enter_scope()
-            for p in params:
-                self.declare(p, 'i32')
-            ret_type = 'void'
-            for stmt in body:
-                if isinstance(stmt, tuple) and stmt[0] == 'return':
-                    ret_type = self.visit_expr(stmt[1])
-                    break
-            self.exit_scope()
-            param_types = ['i32'] * len(params)
-            func_info = {'params': param_types, 'return_type': ret_type}
-            func_name = '<anonymous>'
-
-        else:
-            self.errors.append("错误: 目前只支持直接函数名、变量或匿名函数调用")
+        
+        callee_type = self.visit_expr(callee_node)
+        
+        if not isinstance(callee_type, str) or not callee_type.startswith('fn('):
+            if callee_type != 'unknown':
+                self.errors.append(f"错误: callee 不是函数类型，而是 {callee_type}")
             return 'unknown'
-
-        if func_info is None:
-            self.errors.append(f"错误: 未定义的函数或函数变量 '{func_name}'")
+        
+        parsed = self.parse_fn_type(callee_type)
+        if not parsed:
+            self.warnings.append(f"警告: 无法解析函数类型 {callee_type}")
             return 'unknown'
-
-        # 推断参数类型（仅对 func_table 中的顶层函数有意义）
-        if func_name in self.func_table:
-            for i, arg in enumerate(args):
-                arg_type = self.visit_expr(arg)
-                if i < len(func_info['params']) and func_info['params'][i] == 'unknown':
-                    func_info['params'][i] = arg_type
-
+        
+        param_types, ret_type = parsed
+        
         # 参数数量检查
-        if len(args) != len(func_info['params']):
+        if len(args) != len(param_types):
             self.errors.append(
-                f"错误: 函数 '{func_name}' 期望 {len(func_info['params'])} 个参数，实际 {len(args)} 个"
+                f"错误: 函数期望 {len(param_types)} 个参数，实际 {len(args)} 个"
             )
-
+        
         # 参数类型检查
         for i, arg in enumerate(args):
             arg_type = self.visit_expr(arg)
-            if i < len(func_info['params']) and arg_type != func_info['params'][i] and func_info['params'][i] != 'unknown':
+            if i < len(param_types) and arg_type != param_types[i] and param_types[i] != 'unknown':
                 self.errors.append(
-                    f"错误: 函数 '{func_name}' 第 {i+1} 个参数期望 {func_info['params'][i]}，实际 {arg_type}"
+                    f"错误: 函数第 {i+1} 个参数期望 {param_types[i]}，实际 {arg_type}"
                 )
-
-        return func_info['return_type']
+        
+        return ret_type
     
     # ============ 索引访问 ============
     def visit_index(self, node: Tuple):
@@ -624,9 +618,15 @@ class SemanticAnalyzer:
                 name = node[1]
                 t = self.lookup(name)
                 if t is None:
-                    self.errors.append(f"错误: 未声明的变量 '{name}'")
-                    return 'unknown'
-                # 3.1 移除 P1 限制：允许闭包捕获外部变量
+                    # 3.4 新增：fallback 查命名函数表
+                    func_info = self.func_table.get(name)
+                    if func_info:
+                        params = func_info.get('params', [])
+                        ret = func_info.get('return_type', 'unknown')
+                        t = f"fn({','.join(params)})->{ret}"
+                    else:
+                        self.errors.append(f"错误: 未声明的变量 '{name}'")
+                        return 'unknown'
                 return t
 
             elif node_type == 'num':
@@ -690,6 +690,11 @@ class SemanticAnalyzer:
                 # ===== 3.1 新增：自由变量分析 =====
                 free_vars = self._collect_free_vars(body, params)
 
+                # P3限制：禁止嵌套闭包（返回闭包 / 逃逸）
+                if free_vars and self._fn_expr_depth >= 1:
+                    self.errors.append("错误: 当前版本禁止嵌套闭包（返回闭包/逃逸）")
+                # =================================
+
                 # 检查捕获类型约束：只允许 i32
                 for var in free_vars:
                     var_type = self.lookup(var)
@@ -705,6 +710,7 @@ class SemanticAnalyzer:
                 # =================================
 
                 # 原有逻辑继续：进入作用域、声明参数、推导返回类型
+                self._fn_expr_depth += 1        # 新增：进入内层
                 self.enter_scope()
                 for p in params:
                     self.declare(p, 'i32')
@@ -719,10 +725,12 @@ class SemanticAnalyzer:
                         self.current_func = '<anonymous>'
                         ret_type = self.visit_expr(stmt[1])
                         self.current_func = prev_func
-                        break
+                    else:
+                        self.visit(stmt)  # ← 新增：处理 let_decl、if、while 等
                 
                 self._in_fn_expr = prev_in_fn
                 self.exit_scope()
+                self._fn_expr_depth -= 1        # 新增：退出内层
                 param_types = ['i32'] * len(params)
                 return f"fn({','.join(param_types)})->{ret_type}"
 

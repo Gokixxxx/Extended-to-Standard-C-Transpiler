@@ -41,9 +41,13 @@ class Compiler:
 
 
 def test_compiler():
-    # 测试用例1: 基本整数操作
-    print("测试 1 - 基本整数:")
-    source1 = "let x = 42;"
+    # 测试用例1
+    print("测试 1 - 简单捕获:")
+    source1 = """
+    let outer = 10;
+    let f = fn(x) => outer + x;
+    let r = f(5);
+    """
     compiler1 = Compiler()
     try:
         c_code1 = compiler1.compile(source1)
@@ -52,9 +56,12 @@ def test_compiler():
         print(f"错误: {e}")
     print()
     
-    # 测试用例2: Option 类型
-    print("测试 2 - Option 类型:")
-    source2 = "let opt = Some(5);"
+    # 测试用例2
+    print("测试 2 - 嵌套闭包 add(3)(4):")
+    source2 = """
+    let add = fn(a) => fn(b) => a + b;
+    let result = add(3)(4);
+    """
     compiler2 = Compiler()
     try:
         c_code2 = compiler2.compile(source2)
@@ -63,8 +70,8 @@ def test_compiler():
         print(f"错误: {e}")
     print()
     
-    # 测试用例3: Match 表达式（完整端到端）
-    print("测试 3 - Match 表达式（端到端）:")
+    # 测试用例3
+    print("测试 3 - 回归 - 无捕获函数仍正常工作:")
     source3 = """
     let x = Some(5);
     let y = match x {
@@ -79,16 +86,15 @@ def test_compiler():
     except Exception as e:
         print(f"错误: {e}")
     print()
-    
-    # 测试用例4: 复杂表达式
-    print("测试 4 - 复杂表达式:")
+
+    # 测试用例4
+    print("测试 4 - 闭包作为参数传递")
     source4 = """
-    let a = 10;
-    let b = Some(20);
-    let result = match b {
-        Some(val) => a + val * 2,
-        None => a
-    };
+    fn apply(f, x) {
+        return f(x);
+    }
+    let add5 = fn(y) => 5 + y;
+    let result = apply(add5, 10);
     """
     compiler4 = Compiler()
     try:
@@ -98,16 +104,36 @@ def test_compiler():
         print(f"错误: {e}")
     print()
 
-    # 测试用例5: 函数作为值
-    print("测试 5 - 函数作为值:")
+    # 测试用例5
+    print("测试 5 - 多层嵌套捕获")
     source5 = """
-    let double = fn(x) { return x * 2; };
-    let result = double(10);
+    let x = 1;
+    let y = 2;
+    let f = fn(a) => fn(b) => x + y + a + b;
+    let result = f(3)(4);
     """
     compiler5 = Compiler()
     try:
         c_code5 = compiler5.compile(source5)
         print(c_code5)
+    except Exception as e:
+        print(f"错误: {e}")
+    print()
+
+    # 测试用例6
+    print("测试 6 - 闭包内使用 match")
+    source6 = """
+    let opt = Some(10);
+    let f = fn(x) => match opt {
+        Some(v) => v + x,
+        None => x
+    };
+    let result = f(5);
+    """
+    compiler6 = Compiler()
+    try:
+        c_code6 = compiler6.compile(source6)
+        print(c_code6)
     except Exception as e:
         print(f"错误: {e}")
     print()
