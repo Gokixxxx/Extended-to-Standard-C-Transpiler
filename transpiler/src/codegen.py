@@ -17,8 +17,9 @@ class CCodeGenerator:
         self.fn_expr_counter = 0          # 匿名函数编号计数器
         self.fn_expr_defs = []            # 提升后的全局函数定义代码
         self.fn_expr_types = {}           # fn_expr AST节点 → C函数指针类型字符串
+        self.fn_expr_captures = {}
 
-    def generate(self, ast: Tuple, func_signatures: dict = None) -> str:
+    def generate(self, ast: Tuple, func_signatures: dict = None, fn_expr_captures: dict = None) -> str:
         self.includes.clear()
         self.func_defs.clear()
         self.main_stmts.clear()
@@ -29,6 +30,7 @@ class CCodeGenerator:
         self.fn_expr_counter = 0
         self.fn_expr_defs = []
         self.fn_expr_types = {}
+        self.fn_expr_captures = fn_expr_captures or {}
         
         if ast[0] == 'program':
             for top in ast[1]:

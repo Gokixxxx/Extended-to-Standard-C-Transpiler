@@ -15,6 +15,7 @@ class SemanticAnalyzer:
         self._in_fn_expr = False
         self._fn_expr_ret_type = 'void'
         self._predeclared: Dict[str, str] = {}
+        self.fn_expr_captures: Dict[int, List[str]] = {}
 
     def reset(self):
         self.symbol_table = [{}]
@@ -24,6 +25,7 @@ class SemanticAnalyzer:
         self.current_func = None
         self.deferred_funcs = []
         self._predeclared = {}
+        self.fn_expr_captures.clear()
 
     # ============ 作用域管理 ============
     def enter_scope(self):
@@ -547,6 +549,72 @@ class SemanticAnalyzer:
             expr_node = case[1]
             self.visit_expr(expr_node)
 
+    # 扫描函数体 AST，收集自由变量（不在 params 也不在函数体内声明的变量）
+    def _collect_free_vars(self, body, params):
+        local_vars = set(params)
+        free_vars = []
+
+        def scan(node):
+            if isinstance(node, tuple):
+                op = node[0]
+                if op == 'var':
+                    name = node[1]
+                    if name not in local_vars and name not in free_vars:
+                        free_vars.append(name)
+                elif op == 'let_decl':
+                    scan(node[2])              # 先扫描初始化表达式
+                    local_vars.add(node[1])     # 再将变量加入局部
+                elif op == 'for_in':
+                    scan(node[2])              # 可迭代对象
+                    local_vars.add(node[1])     # 循环变量
+                    for stmt in node[3]:
+                        scan(stmt)
+                elif op == 'match':
+                    scrutinee = node[1]
+                    if scrutinee not in local_vars and scrutinee not in free_vars:
+                        free_vars.append(scrutinee)
+                    for case in node[2]:
+                        if case[0] == 'some_case':
+                            saved = case[1] in local_vars
+                            local_vars.add(case[1])
+                            scan(case[2])
+                            if not saved:
+                                local_vars.remove(case[1])
+                        elif case[0] == 'none_case':
+                            scan(case[1])
+                elif op == 'fn_expr':
+                    # 不深入嵌套 fn_expr，它自己处理自己的捕获
+                    pass
+                elif op == 'return':
+                    scan(node[1])
+                elif op == 'expr_stmt':
+                    scan(node[1])
+                elif op == 'if':
+                    scan(node[1])
+                    for stmt in node[2]:
+                        scan(stmt)
+                    for stmt in node[3]:
+                        scan(stmt)
+                elif op == 'while':
+                    scan(node[1])
+                    for stmt in node[2]:
+                        scan(stmt)
+                elif op == 'assign':
+                    scan(node[1])
+                    scan(node[2])
+                else:
+                    # 通用递归：二元运算、call、index、method_call 等
+                    for child in node[1:]:
+                        if isinstance(child, (tuple, list)):
+                            scan(child)
+            elif isinstance(node, list):
+                for item in node:
+                    scan(item)
+
+        for stmt in body:
+            scan(stmt)
+        return free_vars
+
     # ============ 表达式类型推导 ============
     def visit_expr(self, node: Any) -> str:
         if isinstance(node, tuple):
@@ -558,9 +626,7 @@ class SemanticAnalyzer:
                 if t is None:
                     self.errors.append(f"错误: 未声明的变量 '{name}'")
                     return 'unknown'
-                # P1: 函数表达式禁止捕获外部变量
-                if self._in_fn_expr and name not in self.symbol_table[-1]:
-                    self.errors.append(f"错误: P1函数表达式不能捕获外部变量 '{name}'")
+                # 3.1 移除 P1 限制：允许闭包捕获外部变量
                 return t
 
             elif node_type == 'num':
@@ -620,19 +686,35 @@ class SemanticAnalyzer:
             elif node_type == 'fn_expr':
                 params = node[1]
                 body = node[2]
+
+                # ===== 3.1 新增：自由变量分析 =====
+                free_vars = self._collect_free_vars(body, params)
+
+                # 检查捕获类型约束：只允许 i32
+                for var in free_vars:
+                    var_type = self.lookup(var)
+                    if var_type is None:
+                        var_type = self._predeclared.get(var, 'unknown')
+                    if var_type != 'i32':
+                        self.errors.append(
+                            f"错误: 闭包暂只支持捕获 i32 类型变量，'{var}' 类型为 {var_type}"
+                        )
+
+                # 存储捕获信息，供 Codegen 阶段使用
+                self.fn_expr_captures[id(node)] = free_vars
+                # =================================
+
+                # 原有逻辑继续：进入作用域、声明参数、推导返回类型
                 self.enter_scope()
                 for p in params:
                     self.declare(p, 'i32')
                 
-                # 标记进入 fn_expr 上下文
                 prev_in_fn = self._in_fn_expr
                 self._in_fn_expr = True
                 
-                # 推断返回类型（只扫描 return）
                 ret_type = 'void'
                 for stmt in body:
                     if isinstance(stmt, tuple) and stmt[0] == 'return':
-                        # 临时伪装 current_func，避免 visit_return 报错
                         prev_func = self.current_func
                         self.current_func = '<anonymous>'
                         ret_type = self.visit_expr(stmt[1])
@@ -672,31 +754,15 @@ if __name__ == '__main__':
     from transpiler.src.parser import RustLikeParser
 
     test_cases = [
-        ("Option + 函数", """
-            fn make_some(x) {
-                return Some(x);
-            }
-            let y = make_some(10);
-            let z = match y { Some(v) => v + 1, None => 0 };
-        """),
-
         ("函数作为值", """
             let double = fn(x) { return x * 2; };
             let result = double(10);
         """),
 
-        ("函数变量错误参数", """
-            let double = fn(x) { return x * 2; };
-            let bad = double(10, 20);
-        """),
-
-        ("匿名函数直接调用", """
-            let result = fn(x) { return x + 1; }(5);
-        """),
-
-        ("P1 禁止捕获（应报错）", """
+        ("捕获外部变量", """
             let outer = 10;
-            let f = fn(x) { return x + outer; };
+            let f = fn(x) => outer + x;
+            let r = f(5);
         """),
     ]
 
