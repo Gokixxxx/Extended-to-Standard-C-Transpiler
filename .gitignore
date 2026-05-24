@@ -69,3 +69,6 @@ EOF
 
 # instuctor
 instructor.md
+
+# debug
+*.out
