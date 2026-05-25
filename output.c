@@ -51,7 +51,7 @@ Closure_i32_i32 make_adder(int base) {
     return __t14;
 }
 
-Closure_i32_i32 apply_twice(int (*f)(int), int x) {
+int apply_twice(int (*f)(int), int x) {
     return f(f(x));
 }
 
@@ -169,7 +169,7 @@ int main() {
     Closure_i32_i32 add10 = make_adder(10);
     int result4 = add10.fn(add10.env, 5);
     int (*doubled)(int) = __fn_9;
-    Closure_i32_i32 result5 = apply_twice(doubled, 3);
+    int result5 = apply_twice(doubled, 3);
     Closure_i32_i32 triple_fn = make_multiplier(3);
     int result6 = triple_fn.fn(triple_fn.env, 7);
     Closure_i32_i32 add_150 = make_offset_adder(100, 50);

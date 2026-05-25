@@ -274,19 +274,22 @@ class CCodeGenerator:
     # ==================== 类型推断 ====================
     def _infer_func_return_type(self, node: Tuple):
         func_name = node[1]
+        params = node[2]  # 新增
+        self.current_func_params = set(params)  # 新增
         body = node[3]
         for stmt in body:
             if stmt[0] == 'return':
                 ret_expr = stmt[1]
                 ret_type = self._infer_expr_type(ret_expr)
-                # 新增：函数类型 → 闭包结构体类型
                 if isinstance(ret_type, str) and ret_type.startswith('fn('):
                     parsed = self._parse_fn_type(ret_type)
                     if parsed:
-                        params, _ = parsed
-                        ret_type = self._closure_type(len(params))
+                        params_ret, _ = parsed
+                        ret_type = self._closure_type(len(params_ret))
                 self.func_return_types[func_name] = ret_type
+                self.current_func_params = set()  # 新增：清理
                 return
+        self.current_func_params = set()  # 新增：清理
         self.func_return_types[func_name] = 'int'
 
     def _infer_expr_type(self, expr: Any) -> str:
@@ -331,6 +334,9 @@ class CCodeGenerator:
             # 1. callee 是变量：优先查函数表/let变量表，避免被 Closure_ 短路
             if callee_expr[0] == 'var':
                 func_name = callee_expr[1]
+                # 新增：如果是当前函数的参数，返回 int（参数类型由 semantic 层保证）
+                if func_name in getattr(self, 'current_func_params', set()):
+                    return 'int'
                 func_info = self.func_signatures.get(func_name, {})
                 ret_type = func_info.get('return_type', 'int')
                 if isinstance(ret_type, str) and ret_type.startswith('fn('):
