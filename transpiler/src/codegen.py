@@ -25,6 +25,7 @@ class CCodeGenerator:
         self.func_returns_closure = set()
         self.temp_closures = []   # 需要 free 的临时闭包变量名
         self.current_func_params = set()  # 当前命名函数的参数名（避免与顶层闭包变量冲突）
+        self.closure_struct_defs = {}   # 动态生成的闭包结构体定义
 
     def generate(self, ast: Tuple, func_signatures: dict = None, fn_expr_captures: dict = None) -> str:
         self.includes.clear()
@@ -138,6 +139,23 @@ class CCodeGenerator:
     def _closure_type(self, param_count: int) -> str:
         """根据参数数量返回闭包结构体类型名"""
         return 'Closure_i32' + '_i32' * param_count
+    
+    def _closure_type_for(self, param_count: int, ret_c_type: str) -> str:
+        """根据参数数量和返回类型生成闭包结构体类型名，按需动态生成结构体定义"""
+        if ret_c_type == 'int':
+            return 'Closure_i32' + '_i32' * param_count
+        
+        type_name = f'Closure_{ret_c_type}_' + '_i32' * param_count
+        if type_name not in self.closure_struct_defs:
+            fn_params = 'void *env'
+            if param_count > 0:
+                fn_params += ', ' + ', '.join(['int'] * param_count)
+            def_code = f'''typedef struct {{
+                void *env;
+                {ret_c_type} (*fn)({fn_params});
+            }} {type_name};'''
+            self.closure_struct_defs[type_name] = def_code
+        return type_name
 
     def _parse_fn_type(self, type_str: str):
         """解析 'fn(i32,i32)->i32' 为 (['i32','i32'], 'i32')"""
@@ -341,6 +359,11 @@ class CCodeGenerator:
         lines.append('#include "vec.h"')
         lines.append('#include "closure.h"')
         lines.append('')
+
+        # 动态生成的闭包结构体（返回闭包的情况）
+        for closure_def in self.closure_struct_defs.values():
+            lines.append(closure_def)
+            lines.append('')
         
         # 先输出 Env 结构体（函数定义依赖它们）
         for env_def in self.env_struct_defs:
@@ -502,7 +525,7 @@ class CCodeGenerator:
                 for cap in captures:
                     lines.append(f'{var_name}_env->{cap} = {cap};')
                 
-                closure_type = self._closure_type(len(params))
+                closure_type = self._closure_type_for(len(params), ret_c_type)
                 lines.append(f'{closure_type} {var_name} = {{{var_name}_env, {fn_name}}};')
                 
                 if not self.in_function:
@@ -694,7 +717,19 @@ class CCodeGenerator:
                     for cap in captures:
                         pre_stmts.append(f'{env_name}->{cap} = {cap};')
                     
-                    closure_type = self._closure_type(len(expr[1]))
+                    # 推断返回类型
+                    ret_c_type = 'int'
+                    for stmt in expr[2]:
+                        if stmt[0] == 'return':
+                            ret_c_type = self._infer_expr_type(stmt[1])
+                            if isinstance(ret_c_type, str) and ret_c_type.startswith('fn('):
+                                parsed = self._parse_fn_type(ret_c_type)
+                                if parsed:
+                                    params_ret, _ = parsed
+                                    ret_c_type = self._closure_type(len(params_ret))
+                            break
+                    
+                    closure_type = self._closure_type_for(len(expr[1]), ret_c_type)
                     closure_name = self._new_temp()
                     pre_stmts.append(f'{closure_type} {closure_name} = {{{env_name}, {fn_name}}};')
                     

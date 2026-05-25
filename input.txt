@@ -1,45 +1,35 @@
-let outer = 10;
-let f = fn(x) => outer + x;
-let r = f(5);
+let add = fn(a) => fn(b) => a + b;
+let result1 = add(3)(4);
 
-let doubled = fn(x) {
-    return x * 2;
-};
-let result = doubled(10);
+let x = 1;
+let y = 2;
+let f = fn(a) => fn(b) => x + y + a + b;
+let result2 = f(3)(4);
 
-fn apply(f, x) {
-    return f(x);
+let triple = fn(a) => fn(b) => fn(c) => a + b + c;
+let result3 = triple(1)(2)(3);
+
+fn make_adder(base) {
+    return fn(x) => base + x;
 }
-let add5 = fn(y) => 5 + y;
-let applied = apply(add5, 10);
+let add10 = make_adder(10);
+let result4 = add10(5);
 
-let v = [1, 2, 3];
-v.push(4);
-let len = v.len();
-let first = v[0];
-
-let opt = Some(42);
-let matched = match opt {
-    Some(v) => v + 1,
-    None => 0
-};
-
-let arr = [10, 20, 30];
-let sum = 0;
-for x in arr {
-    sum = sum + x;
+fn apply_twice(f, x) {
+    return f(f(x));
 }
+let double = fn(n) => n * 2;
+let result5 = apply_twice(double, 3);
 
-let a = 1;
-let b = 2;
-let fa = fn(x) => a + x;
-let fb = fn(y) => b + y;
-let ra = fa(10);
-let rb = fb(20);
+fn make_multiplier(factor) {
+    return fn(x) => x * factor;
+}
+let triple_fn = make_multiplier(3);
+let result6 = triple_fn(7);
 
-let base = 100;
-let fc = fn(z) {
-    let local = 50;
-    return base + local + z;
-};
-let rc = fc(5);
+let offset = 100;
+fn make_offset_adder(delta) {
+    return fn(x) => offset + delta + x;
+}
+let add_150 = make_offset_adder(50);
+let result7 = add_150(7);
