@@ -29,6 +29,7 @@ class CCodeGenerator:
         self.closure_struct_defs = {}   # 动态生成的闭包结构体定义
         self.let_var_types = {}   # let 变量名 → C 返回类型
         self.closure_type_ret_map = {}   # Closure_类型名 → fn 的返回类型
+        self.closure_params = set()   # 当前函数中类型为闭包的参数名
 
     def generate(self, ast: Tuple, func_signatures: dict = None, fn_expr_captures: dict = None) -> str:
         self.includes.clear()
@@ -203,9 +204,9 @@ class CCodeGenerator:
         op = expr[0]
         if op == 'var':
             name = expr[1]
-            # 如果是当前命名函数的参数，优先认为是普通参数（非闭包）
+            # 如果是当前命名函数的参数，检查它是否是闭包参数
             if name in getattr(self, 'current_func_params', set()):
-                return False
+                return name in getattr(self, 'closure_params', set())
             return name in self.closure_vars
         elif op == 'fn_expr':
             return self._is_closure_expr(expr)
@@ -277,6 +278,20 @@ class CCodeGenerator:
         
         lines.append('}')
         return '\n'.join(lines)
+    
+    def _expr_is_closure(self, expr) -> bool:
+        """判断表达式是否已经是闭包结构体（不需要再包装）"""
+        if not isinstance(expr, tuple):
+            return False
+        op = expr[0]
+        if op == 'fn_expr':
+            return self._is_closure_expr(expr)
+        elif op == 'var':
+            name = expr[1]
+            return name in self.closure_vars
+        elif op == 'call':
+            return self._expr_returns_closure(expr)
+        return False
 
     # ==================== 类型推断 ====================
     def _infer_func_return_type(self, node: Tuple):
@@ -446,6 +461,7 @@ class CCodeGenerator:
     # ==================== 函数定义 ====================
     def _gen_func_def(self, node: Tuple) -> str:
         self.func_temp_closures = []    # 清空当前函数的临时闭包列表
+        self.closure_params = set()   # 新增：每个函数独立
 
         func_name = node[1]
         params = node[2]
@@ -470,8 +486,17 @@ class CCodeGenerator:
                 elif isinstance(param_type, str) and param_type.startswith('fn('):
                     parsed = self._parse_fn_type(param_type)
                     if parsed:
-                        fn_params, _ = parsed
-                        param_parts.append(f'int (*{p})({", ".join(["int"] * len(fn_params))})')
+                        fn_params, fn_ret = parsed
+                        # 计算 C 返回类型（处理返回闭包的嵌套情况）
+                        ret_c_type = self._c_type_from_str(fn_ret)
+                        if isinstance(fn_ret, str) and fn_ret.startswith('fn('):
+                            inner_parsed = self._parse_fn_type(fn_ret)
+                            if inner_parsed:
+                                inner_params, _ = inner_parsed
+                                ret_c_type = self._closure_type(len(inner_params))
+                        closure_type = self._closure_type_for(len(fn_params), ret_c_type)
+                        param_parts.append(f'{closure_type} {p}')
+                        self.closure_params.add(p)   # 标记为闭包参数
                     else:
                         param_parts.append(f'int {p}')
                 else:
@@ -807,10 +832,20 @@ class CCodeGenerator:
                 args = expr[2]
                 # 判断 callee 是否为闭包
                 is_closure = self._is_closure_callee(callee_expr)
-                # 生成参数代码（支持 vec_literal 前置语句）
+                # 生成参数代码
+                
+                # 获取形参类型列表，用于判断是否需要包装
+                param_types = []
+                if callee_expr[0] == 'var':
+                    func_name = callee_expr[1]
+                    func_info = self.func_signatures.get(func_name, {})
+                    param_types = func_info.get('params', [])
+
                 arg_codes = []
                 pre_stmts = []
-                for a in args:
+                for i, a in enumerate(args):
+                    expected_type = param_types[i] if i < len(param_types) else 'unknown'
+                    # vec_literal 保持原有特殊处理
                     if a[0] == 'vec_literal':
                         tmp = self._new_temp()
                         self.includes.add('vec.h')
@@ -819,14 +854,32 @@ class CCodeGenerator:
                             elem_code = self._generate_expr(elem, subs)
                             pre_stmts.append(f'vec_push_i32(&{tmp}, {elem_code});')
                         arg_codes.append(tmp)
-                    else:
-                        arg_code = self._generate_expr(a, subs)
-                        if '\n' in arg_code:
-                            parts = arg_code.split('\n')
-                            pre_stmts.extend(parts[:-1])
-                            arg_codes.append(parts[-1])
-                        else:
-                            arg_codes.append(arg_code) 
+                        continue
+                    arg_code = self._generate_expr(a, subs)
+                    # 处理多行前置语句
+                    if '\n' in arg_code:
+                        parts = arg_code.split('\n')
+                        pre_stmts.extend(parts[:-1])
+                        arg_code = parts[-1]
+                    # 关键：期望类型是函数，但实参不是闭包 → 包装为闭包结构体
+                    if isinstance(expected_type, str) and expected_type.startswith('fn('):
+                        if not self._expr_is_closure(a):
+                            parsed = self._parse_fn_type(expected_type)
+                            if parsed:
+                                fn_params, fn_ret = parsed
+                                ret_c_type = self._c_type_from_str(fn_ret)
+                                if isinstance(fn_ret, str) and fn_ret.startswith('fn('):
+                                    inner_parsed = self._parse_fn_type(fn_ret)
+                                    if inner_parsed:
+                                        inner_params, _ = inner_parsed
+                                        ret_c_type = self._closure_type(len(inner_params))
+                                closure_type = self._closure_type_for(len(fn_params), ret_c_type)
+                                tmp = self._new_temp()
+                                pre_stmts.append(f'{closure_type} {tmp} = {{NULL, {arg_code}}};')
+                                arg_codes.append(tmp)
+                                continue
+                    arg_codes.append(arg_code)
+
                 # 生成 callee 代码
                 callee_code = self._generate_expr(callee_expr, subs)
                 # 先拆分 callee 的多行前置语句（如内层闭包调用链）
