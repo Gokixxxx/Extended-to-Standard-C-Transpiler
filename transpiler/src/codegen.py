@@ -23,7 +23,8 @@ class CCodeGenerator:
         self.closure_return_funcs = set()   # 返回闭包的命名函数
         self.closure_env_vars = set()     # 需要 free 的闭包变量（顶层）
         self.func_returns_closure = set()
-        self.temp_closures = []   # 需要 free 的临时闭包变量名
+        self.temp_closures = []           # main() 中的临时闭包
+        self.func_temp_closures = []      # 当前命名函数/提升函数内的临时闭包
         self.current_func_params = set()  # 当前命名函数的参数名（避免与顶层闭包变量冲突）
         self.closure_struct_defs = {}   # 动态生成的闭包结构体定义
         self.let_var_types = {}   # let 变量名 → C 返回类型
@@ -227,6 +228,8 @@ class CCodeGenerator:
     
     def _gen_fn_expr_def(self, node: Tuple, fn_name: str) -> str:
         """将 fn_expr 提升为全局 static 函数（支持闭包 env）"""
+        self.func_temp_closures = []  # 清空提升函数的临时闭包列表
+
         params = node[1]
         body = node[2]
         captures = self.fn_expr_captures.get(id(node), [])
@@ -266,6 +269,11 @@ class CCodeGenerator:
         
         for var in func_vec_vars:
             lines.append(f'    free({var}.data);')
+
+        # 释放提升函数内的临时闭包 Env
+        for tmp in self.func_temp_closures:
+            lines.append(f'    free({tmp}.env);')
+        self.func_temp_closures = []
         
         lines.append('}')
         return '\n'.join(lines)
@@ -404,14 +412,14 @@ class CCodeGenerator:
             lines.append(env_def)
             lines.append('')
         
-        # 命名函数定义
-        for func in self.func_defs:
-            lines.append(func)
-            lines.append('')
-        
         # 提升的匿名函数定义
         for fn_def in self.fn_expr_defs:
             lines.append(fn_def)
+            lines.append('')
+
+        # 命名函数定义
+        for func in self.func_defs:
+            lines.append(func)
             lines.append('')
         
         lines.append('int main() {')
@@ -437,6 +445,8 @@ class CCodeGenerator:
 
     # ==================== 函数定义 ====================
     def _gen_func_def(self, node: Tuple) -> str:
+        self.func_temp_closures = []    # 清空当前函数的临时闭包列表
+
         func_name = node[1]
         params = node[2]
         body = node[3]
@@ -484,6 +494,11 @@ class CCodeGenerator:
         
         for var in func_vec_vars:
             lines.append(f'    free({var}.data);')
+
+        # 释放当前函数内的临时闭包 Env
+        for tmp in self.func_temp_closures:
+            lines.append(f'    free({tmp}.env);')
+        self.func_temp_closures = []
         
         lines.append('}')
         self.in_function = False
@@ -829,7 +844,11 @@ class CCodeGenerator:
                         closure_type = self._closure_type(len(args))
                     pre_stmts.append(f'{closure_type} {tmp} = {callee_code};')
                     callee_code = tmp
-                    self.temp_closures.append(tmp)
+                    # 按作用域选择：函数内 vs main()
+                    if self.in_function:
+                        self.func_temp_closures.append(tmp)
+                    else:
+                        self.temp_closures.append(tmp)
                 
                 # 构建调用
                 if is_closure:

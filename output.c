@@ -6,12 +6,6 @@ struct __env_2 {
     int a;
 };
 
-int mymain(void) {
-    Closure_i32_i32 (*add)(int) = __fn_1;
-    Closure_i32_i32 __t3 = add(3);
-    int result = __t3.fn(__t3.env, 4);
-}
-
 static int __fn_2(void *__env, int b) {
     struct __env_2 *env = (struct __env_2 *)__env;
     int a = env->a;
@@ -25,7 +19,13 @@ static Closure_i32_i32 __fn_1(int a) {
     return __t2;
 }
 
-int main() {
+int mymain(void) {
+    Closure_i32_i32 (*add)(int) = __fn_1;
+    Closure_i32_i32 __t3 = add(3);
+    int result = __t3.fn(__t3.env, 4);
     free(__t3.env);
+}
+
+int main() {
     return 0;
 }
