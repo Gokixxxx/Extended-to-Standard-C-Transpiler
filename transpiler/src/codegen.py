@@ -218,7 +218,6 @@ class CCodeGenerator:
                     if parsed:
                         ret_params, _ = parsed
                         ret_type = self._closure_type(len(ret_params))
-                        ret_type = self._closure_type(len(params))
                 break
         
         has_captures = bool(captures)

@@ -106,11 +106,11 @@ int main() {
     fc_env->base = base;
     Closure_i32_i32 fc = {fc_env, __fn_6};
     int rc = fc.fn(fc.env, 5);
-    free(v.data);
     free(arr.data);
-    free(fc_env);
+    free(v.data);
     free(f_env);
-    free(fb_env);
     free(fa_env);
+    free(fc_env);
+    free(fb_env);
     return 0;
 }

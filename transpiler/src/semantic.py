@@ -577,8 +577,13 @@ class SemanticAnalyzer:
                         elif case[0] == 'none_case':
                             scan(case[1])
                 elif op == 'fn_expr':
-                    # 不深入嵌套 fn_expr，它自己处理自己的捕获
-                    pass
+                    # 递归收集内层自由变量，合并到当前层
+                    inner_params = node[1]
+                    inner_body  = node[2]
+                    inner_free = self._collect_free_vars(inner_body, inner_params)
+                    for var in inner_free:
+                        if var not in local_vars and var not in free_vars:
+                            free_vars.append(var)
                 elif op == 'return':
                     scan(node[1])
                 elif op == 'expr_stmt':
@@ -687,13 +692,8 @@ class SemanticAnalyzer:
                 params = node[1]
                 body = node[2]
 
-                # ===== 3.1 新增：自由变量分析 =====
+                # 自由变量分析
                 free_vars = self._collect_free_vars(body, params)
-
-                # P3限制：禁止嵌套闭包（返回闭包 / 逃逸）
-                if free_vars and self._fn_expr_depth >= 1:
-                    self.errors.append("错误: 当前版本禁止嵌套闭包（返回闭包/逃逸）")
-                # =================================
 
                 # 检查捕获类型约束：只允许 i32
                 for var in free_vars:
@@ -762,15 +762,10 @@ if __name__ == '__main__':
     from transpiler.src.parser import RustLikeParser
 
     test_cases = [
-        ("函数作为值", """
-            let double = fn(x) { return x * 2; };
-            let result = double(10);
-        """),
-
-        ("捕获外部变量", """
-            let outer = 10;
-            let f = fn(x) => outer + x;
-            let r = f(5);
+        ("解除嵌套闭包的语义限制", """
+        let x = 1;
+        let add = fn(a) => fn(b) => x + a + b;
+        let result = add(3)(4);
         """),
     ]
 
@@ -793,3 +788,17 @@ if __name__ == '__main__':
                 print("通过")
         except Exception as e:
             print(f"解析错误: {e}")
+
+    # 临时验证 Step 1
+    code = """
+    let x = 1;
+    let add = fn(a) => fn(b) => x + a + b;
+    """
+    tokens = lexer.tokenize(code)
+    ast = parser.parse(tokens)
+    analyzer.reset()
+    analyzer.analyze(ast)
+    
+    # 打印所有 fn_expr 的捕获列表
+    for node_id, caps in analyzer.fn_expr_captures.items():
+        print(f"fn_expr {node_id}: captures {caps}")
