@@ -8,6 +8,7 @@ _: Any
 
 class RustLikeParser(Parser):
     tokens = RustLikeLexer.tokens
+    expect = 6  # 允许 6 个 shift/reduce 冲突（is_some/is_none 前缀/后缀/属性写法重叠）
 
     precedence = (
         ('right', 'EQ'),

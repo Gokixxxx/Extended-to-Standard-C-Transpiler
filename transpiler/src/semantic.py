@@ -66,6 +66,7 @@ class SemanticAnalyzer:
                     params = top[2]
                     self.func_table[func_name] = {
                         'params': ['unknown'] * len(params),
+                        'param_names': list(params),   # 新增：记录参数名顺序
                         'return_type': 'unknown'
                     }
 
@@ -377,7 +378,7 @@ class SemanticAnalyzer:
         for i, param in enumerate(params):
             param_type = func_info['params'][i] if i < len(func_info['params']) else 'unknown'
             if param_type == 'unknown':
-                param_type = 'i32'
+                param_type = 'fn_unknown'  # 保持未知，标记为"待推断"
             self.declare(param, param_type)
 
         for stmt in body:
@@ -405,6 +406,25 @@ class SemanticAnalyzer:
         # 匿名函数不更新 func_table（因为不在其中）
         if self.current_func == '<anonymous>':
             return
+        
+        # 补全当前函数参数中 fn_unknown 的返回类型
+        if isinstance(node[1], tuple) and node[1][0] == 'call':
+            callee_node = node[1][1]
+            if callee_node[0] == 'var':
+                callee_name = callee_node[1]
+                callee_type = self.lookup(callee_name)
+                if isinstance(callee_type, str) and callee_type.startswith('fn(') and '->unknown' in callee_type:
+                    # 提取参数部分
+                    arrow_idx = callee_type.find(')->')
+                    params_part = callee_type[3:arrow_idx]
+                    new_type = f"fn({params_part})->{expr_type}"
+                    self.declare(callee_name, new_type, is_shadowing_allowed=True)
+                    if self.current_func and self.current_func in self.func_table:
+                        func_info = self.func_table[self.current_func]
+                        param_names = func_info.get('param_names', [])
+                        if callee_name in param_names:
+                            idx = param_names.index(callee_name)
+                            func_info['params'][idx] = new_type
 
         func_info = self.func_table[self.current_func]
         if func_info['return_type'] == 'unknown':
@@ -420,6 +440,33 @@ class SemanticAnalyzer:
         args = node[2]
         
         callee_type = self.visit_expr(callee_node)
+
+        # 重新 lookup，可能已被其他调用或 return 补全
+        if isinstance(callee_type, str) and callee_type.startswith('fn(') and '->unknown' in callee_type:
+            if callee_node[0] == 'var':
+                refreshed = self.lookup(callee_node[1])
+                if refreshed and refreshed != callee_type and isinstance(refreshed, str) and refreshed.startswith('fn('):
+                    callee_type = refreshed
+
+        # 反向推断：如果 callee 是 fn_unknown，根据本次调用推断参数类型
+        if callee_type == 'fn_unknown' and callee_node[0] == 'var':
+            func_name = callee_node[1]
+            # 推断实参类型
+            inferred_params = []
+            for arg in args:
+                arg_type = self.visit_expr(arg)
+                inferred_params.append(arg_type)
+            # 返回类型暂时 unknown，留待 return 语句推断
+            inferred_type = f"fn({','.join(inferred_params)})->unknown"
+            # 更新符号表（允许 shadowing 覆盖 fn_unknown）
+            self.declare(func_name, inferred_type, is_shadowing_allowed=True)
+            callee_type = inferred_type
+            if self.current_func and self.current_func in self.func_table:
+                func_info = self.func_table[self.current_func]
+                param_names = func_info.get('param_names', [])
+                if func_name in param_names:
+                    idx = param_names.index(func_name)
+                    func_info['params'][idx] = inferred_type
         
         if not isinstance(callee_type, str) or not callee_type.startswith('fn('):
             if callee_type != 'unknown':
@@ -442,9 +489,19 @@ class SemanticAnalyzer:
         # 参数类型检查
         for i, arg in enumerate(args):
             arg_type = self.visit_expr(arg)
-            if i < len(param_types) and arg_type != param_types[i] and param_types[i] != 'unknown':
+            if i < len(param_types) and arg_type != param_types[i]:
+                expected = param_types[i]
+                if expected == 'unknown':
+                    continue
+                # 允许 fn(...)->unknown 与实际函数类型暂时兼容（返回类型待推断）
+                if isinstance(expected, str) and expected.startswith('fn(') and '->unknown' in expected:
+                    if isinstance(arg_type, str) and arg_type.startswith('fn('):
+                        parsed_expected = self.parse_fn_type(expected)
+                        parsed_actual = self.parse_fn_type(arg_type)
+                        if parsed_expected and parsed_actual and parsed_expected[0] == parsed_actual[0]:
+                            continue
                 self.errors.append(
-                    f"错误: 函数第 {i+1} 个参数期望 {param_types[i]}，实际 {arg_type}"
+                    f"错误: 函数第 {i+1} 个参数期望 {expected}，实际 {arg_type}"
                 )
         
         return ret_type

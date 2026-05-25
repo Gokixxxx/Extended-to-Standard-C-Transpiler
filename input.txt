@@ -1,4 +1,7 @@
-fn mymain() {
-    let add = fn(a) => fn(b) => a + b;
-    let result = add(3)(4);
+fn apply_twice(f, x) {
+    return f(f(x));
+}
+fn mytest() {
+    let doubled = fn(n) => n * 2;
+    let result = apply_twice(doubled, 3);
 }
