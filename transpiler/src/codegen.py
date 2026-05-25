@@ -327,11 +327,10 @@ class CCodeGenerator:
         elif op == 'match':
             return 'int'
         elif op == 'call':
-            callee_type = self._infer_expr_type(expr[1])
-            if isinstance(callee_type, str) and callee_type.startswith('Closure_'):
-                return self.closure_type_ret_map.get(callee_type, 'int')
-            if expr[1][0] == 'var':
-                func_name = expr[1][1]
+            callee_expr = expr[1]
+            # 1. callee 是变量：优先查函数表/let变量表，避免被 Closure_ 短路
+            if callee_expr[0] == 'var':
+                func_name = callee_expr[1]
                 func_info = self.func_signatures.get(func_name, {})
                 ret_type = func_info.get('return_type', 'int')
                 if isinstance(ret_type, str) and ret_type.startswith('fn('):
@@ -344,6 +343,11 @@ class CCodeGenerator:
                     return named_ret
                 if func_name in self.let_var_types:
                     return self.let_var_types[func_name]
+                return 'int'
+            # 2. callee 是闭包表达式（如 fn_expr 或 call 链中间结果）
+            callee_type = self._infer_expr_type(callee_expr)
+            if isinstance(callee_type, str) and callee_type.startswith('Closure_'):
+                return self.closure_type_ret_map.get(callee_type, 'int')
             return 'int'
         
         elif op == 'fn_expr':
@@ -559,6 +563,7 @@ class CCodeGenerator:
             c_type = 'Option_i32'
         elif isinstance(type_str, str) and type_str.startswith('Closure_'):
             c_type = type_str
+            self.closure_vars.add(var_name)
         else:
             c_type = 'int'
 
@@ -804,6 +809,12 @@ class CCodeGenerator:
                             arg_codes.append(arg_code) 
                 # 生成 callee 代码
                 callee_code = self._generate_expr(callee_expr, subs)
+                # 先拆分 callee 的多行前置语句（如内层闭包调用链）
+                if '\n' in callee_code:
+                    parts = callee_code.split('\n')
+                    pre_stmts.extend(parts[:-1])
+                    callee_code = parts[-1]
+                # 再为闭包调用链生成临时变量（此时 callee_code 已净化为单行）
                 if is_closure and callee_expr[0] == 'call':
                     tmp = self._new_temp()
                     callee_ret_type = self._infer_expr_type(callee_expr)
@@ -814,10 +825,6 @@ class CCodeGenerator:
                     pre_stmts.append(f'{closure_type} {tmp} = {callee_code};')
                     callee_code = tmp
                     self.temp_closures.append(tmp)
-                if '\n' in callee_code:
-                    parts = callee_code.split('\n')
-                    pre_stmts.extend(parts[:-1])
-                    callee_code = parts[-1]
                 
                 # 构建调用
                 if is_closure:

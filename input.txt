@@ -18,8 +18,8 @@ let result4 = add10(5);
 fn apply_twice(f, x) {
     return f(f(x));
 }
-let double = fn(n) => n * 2;
-let result5 = apply_twice(double, 3);
+let doubled = fn(n) => n * 2;
+let result5 = apply_twice(doubled, 3);
 
 fn make_multiplier(factor) {
     return fn(x) => x * factor;

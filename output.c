@@ -51,7 +51,7 @@ Closure_i32_i32 make_adder(int base) {
     return __t14;
 }
 
-int apply_twice(int (*f)(int), int x) {
+Closure_i32_i32 apply_twice(int (*f)(int), int x) {
     return f(f(x));
 }
 
@@ -163,17 +163,17 @@ int main() {
     Closure_i32_i32 __t6 = f.fn(f.env, 3);
     int result2 = __t6.fn(__t6.env, 4);
     Closure_Closure_i32_i32__i32 (*triple)(int) = __fn_5;
-    Closure_i32_i32 __t12 = Closure_i32_i32 __t11 = triple(1);
-    __t11.fn(__t11.env, 2);
+    Closure_Closure_i32_i32__i32 __t11 = triple(1);
+    Closure_i32_i32 __t12 = __t11.fn(__t11.env, 2);
     int result3 = __t12.fn(__t12.env, 3);
     Closure_i32_i32 add10 = make_adder(10);
-    int result4 = add10(5);
-    int (*double)(int) = __fn_9;
-    int result5 = apply_twice(double, 3);
+    int result4 = add10.fn(add10.env, 5);
+    int (*doubled)(int) = __fn_9;
+    Closure_i32_i32 result5 = apply_twice(doubled, 3);
     Closure_i32_i32 triple_fn = make_multiplier(3);
-    int result6 = triple_fn(7);
+    int result6 = triple_fn.fn(triple_fn.env, 7);
     Closure_i32_i32 add_150 = make_offset_adder(100, 50);
-    int result7 = add_150(7);
+    int result7 = add_150.fn(add_150.env, 7);
     free(f_env);
     free(__t3.env);
     free(__t6.env);
