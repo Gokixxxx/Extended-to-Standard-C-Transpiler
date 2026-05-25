@@ -40,7 +40,7 @@ struct __env_10 {
 };
 
 struct __env_11 {
-    int offset;
+    int base;
     int delta;
 };
 
@@ -62,9 +62,9 @@ Closure_i32_i32 make_multiplier(int factor) {
     return __t16;
 }
 
-Closure_i32_i32 make_offset_adder(int delta) {
+Closure_i32_i32 make_offset_adder(int base, int delta) {
     struct __env_11 *__t17 = malloc(sizeof(struct __env_11));
-    __t17->offset = offset;
+    __t17->base = base;
     __t17->delta = delta;
     Closure_i32_i32 __t18 = {__t17, __fn_11};
     return __t18;
@@ -120,7 +120,7 @@ static Closure_i32_i32 __fn_6(void *__env, int b) {
     return __t8;
 }
 
-static Closure_i32_i32 __fn_5(int a) {
+static Closure_Closure_i32_i32__i32 __fn_5(int a) {
     struct __env_6 *__t9 = malloc(sizeof(struct __env_6));
     __t9->a = a;
     Closure_Closure_i32_i32__i32 __t10 = {__t9, __fn_6};
@@ -145,9 +145,9 @@ static int __fn_10(void *__env, int x) {
 
 static int __fn_11(void *__env, int x) {
     struct __env_11 *env = (struct __env_11 *)__env;
-    int offset = env->offset;
+    int base = env->base;
     int delta = env->delta;
-    return ((offset + delta) + x);
+    return ((base + delta) + x);
 }
 
 int main() {
@@ -162,18 +162,17 @@ int main() {
     Closure_Closure_i32_i32__i32 f = {f_env, __fn_3};
     Closure_i32_i32 __t6 = f.fn(f.env, 3);
     int result2 = __t6.fn(__t6.env, 4);
-    Closure_i32_i32 (*triple)(int) = __fn_5;
+    Closure_Closure_i32_i32__i32 (*triple)(int) = __fn_5;
     Closure_i32_i32 __t12 = Closure_i32_i32 __t11 = triple(1);
     __t11.fn(__t11.env, 2);
     int result3 = __t12.fn(__t12.env, 3);
-    int add10 = make_adder(10);
+    Closure_i32_i32 add10 = make_adder(10);
     int result4 = add10(5);
     int (*double)(int) = __fn_9;
     int result5 = apply_twice(double, 3);
-    int triple_fn = make_multiplier(3);
+    Closure_i32_i32 triple_fn = make_multiplier(3);
     int result6 = triple_fn(7);
-    int offset = 100;
-    int add_150 = make_offset_adder(50);
+    Closure_i32_i32 add_150 = make_offset_adder(100, 50);
     int result7 = add_150(7);
     free(f_env);
     free(__t3.env);

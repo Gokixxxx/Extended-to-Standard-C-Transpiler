@@ -27,9 +27,8 @@ fn make_multiplier(factor) {
 let triple_fn = make_multiplier(3);
 let result6 = triple_fn(7);
 
-let offset = 100;
-fn make_offset_adder(delta) {
-    return fn(x) => offset + delta + x;
+fn make_offset_adder(base, delta) {
+    return fn(x) => base + delta + x;
 }
-let add_150 = make_offset_adder(50);
+let add_150 = make_offset_adder(100, 50);
 let result7 = add_150(7);
