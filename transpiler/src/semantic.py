@@ -623,7 +623,7 @@ class SemanticAnalyzer:
                 name = node[1]
                 t = self.lookup(name)
                 if t is None:
-                    # 3.4 新增：fallback 查命名函数表
+                    # fallback 查命名函数表
                     func_info = self.func_table.get(name)
                     if func_info:
                         params = func_info.get('params', [])
@@ -649,7 +649,7 @@ class SemanticAnalyzer:
                 return f'Option<{inner_type}>'
 
             elif node_type == 'none':
-                return 'Option<i32>'  # 修复：从 Option<unknown> 改为 Option<i32>
+                return 'Option<i32>'
 
             elif node_type in ['add', 'sub', 'mul', 'div']:
                 left_type = self.visit_expr(node[1])
@@ -710,7 +710,7 @@ class SemanticAnalyzer:
                 # =================================
 
                 # 原有逻辑继续：进入作用域、声明参数、推导返回类型
-                self._fn_expr_depth += 1        # 新增：进入内层
+                self._fn_expr_depth += 1        # 进入内层
                 self.enter_scope()
                 for p in params:
                     self.declare(p, 'i32')
@@ -726,11 +726,11 @@ class SemanticAnalyzer:
                         ret_type = self.visit_expr(stmt[1])
                         self.current_func = prev_func
                     else:
-                        self.visit(stmt)  # ← 新增：处理 let_decl、if、while 等
+                        self.visit(stmt)  # 处理 let_decl、if、while 等
                 
                 self._in_fn_expr = prev_in_fn
                 self.exit_scope()
-                self._fn_expr_depth -= 1        # 新增：退出内层
+                self._fn_expr_depth -= 1        # 退出内层
                 param_types = ['i32'] * len(params)
                 return f"fn({','.join(param_types)})->{ret_type}"
 

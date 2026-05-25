@@ -80,7 +80,7 @@ class CCodeGenerator:
             return 'Option_i32'
         return 'int'
     
-    # ==================== 3.3/3.4 闭包辅助方法 ====================
+    # ==================== 闭包辅助方法 ====================
     def _pre_scan(self, node):
         """预扫描 AST，标记闭包变量和返回闭包的函数"""
         if not isinstance(node, tuple):
@@ -209,7 +209,6 @@ class CCodeGenerator:
         elif op == 'fn_expr':
             return self._is_closure_expr(expr)
         elif op == 'call':
-            # 如 add(3) 返回闭包，则 add(3)(4) 的外层 callee 是闭包
             return self._expr_returns_closure(expr)
         return False
 
@@ -274,8 +273,8 @@ class CCodeGenerator:
     # ==================== 类型推断 ====================
     def _infer_func_return_type(self, node: Tuple):
         func_name = node[1]
-        params = node[2]  # 新增
-        self.current_func_params = set(params)  # 新增
+        params = node[2]
+        self.current_func_params = set(params)
         body = node[3]
         for stmt in body:
             if stmt[0] == 'return':
@@ -287,9 +286,9 @@ class CCodeGenerator:
                         params_ret, _ = parsed
                         ret_type = self._closure_type(len(params_ret))
                 self.func_return_types[func_name] = ret_type
-                self.current_func_params = set()  # 新增：清理
+                self.current_func_params = set()  # 清理
                 return
-        self.current_func_params = set()  # 新增：清理
+        self.current_func_params = set()  # 清理
         self.func_return_types[func_name] = 'int'
 
     def _infer_expr_type(self, expr: Any) -> str:
@@ -334,7 +333,7 @@ class CCodeGenerator:
             # 1. callee 是变量：优先查函数表/let变量表，避免被 Closure_ 短路
             if callee_expr[0] == 'var':
                 func_name = callee_expr[1]
-                # 新增：如果是当前函数的参数，返回 int（参数类型由 semantic 层保证）
+                # 如果是当前函数的参数，返回 int（参数类型由 semantic 层保证）
                 if func_name in getattr(self, 'current_func_params', set()):
                     return 'int'
                 func_info = self.func_signatures.get(func_name, {})
