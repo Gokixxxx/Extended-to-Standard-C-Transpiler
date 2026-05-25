@@ -20,8 +20,9 @@ class CCodeGenerator:
         self.fn_expr_captures = {}
         self.env_struct_defs = []         # Env 结构体定义代码
         self.closure_vars = set()         # 绑定闭包的变量名
+        self.main_closure_vars = []       # main 中声明的闭包变量名
+        self.func_closure_vars = []       # 当前命名函数/提升函数内的闭包变量名
         self.closure_return_funcs = set()   # 返回闭包的命名函数
-        self.closure_env_vars = set()     # 需要 free 的闭包变量（顶层）
         self.func_returns_closure = set()
         self.temp_closures = []           # main() 中的临时闭包
         self.func_temp_closures = []      # 当前命名函数/提升函数内的临时闭包
@@ -47,7 +48,8 @@ class CCodeGenerator:
         self.env_struct_defs = []
         self.closure_vars = set()
         self.closure_return_funcs = set()
-        self.closure_env_vars = set()
+        self.main_closure_vars = []
+        self.func_closure_vars = []
         self.func_returns_closure = set()
         self.temp_closures = []
         self.current_func_params = set()
@@ -229,6 +231,11 @@ class CCodeGenerator:
     
     def _gen_fn_expr_def(self, node: Tuple, fn_name: str) -> str:
         """将 fn_expr 提升为全局 static 函数（支持闭包 env）"""
+        saved_in_function = self.in_function
+        saved_func_closure_vars = self.func_closure_vars
+        self.in_function = True
+        self.func_closure_vars = []
+
         self.func_temp_closures = []  # 清空提升函数的临时闭包列表
 
         params = node[1]
@@ -275,7 +282,15 @@ class CCodeGenerator:
         for tmp in self.func_temp_closures:
             lines.append(f'    free({tmp}.env);')
         self.func_temp_closures = []
-        
+
+        # 释放提升函数内的局部闭包变量 Env
+        for var in self.func_closure_vars:
+            lines.append(f'    free({var}.env);')
+
+        # 恢复状态
+        self.in_function = saved_in_function
+        self.func_closure_vars = saved_func_closure_vars
+                
         lines.append('}')
         return '\n'.join(lines)
     
@@ -445,9 +460,9 @@ class CCodeGenerator:
         for var in self.vec_vars:
             lines.append(f"    free({var}.data);")
         
-        # 释放顶层闭包 Env
-        for var in self.closure_env_vars:
-            lines.append(f"    free({var}_env);")
+        # 释放 main 中的闭包变量 Env
+        for var in self.main_closure_vars:
+            lines.append(f"    free({var}.env);")
 
         # 释放临时闭包 Env
         for tmp in self.temp_closures:
@@ -524,7 +539,11 @@ class CCodeGenerator:
         for tmp in self.func_temp_closures:
             lines.append(f'    free({tmp}.env);')
         self.func_temp_closures = []
-        
+        # 释放当前函数内的闭包变量 Env
+        for var in self.func_closure_vars:
+            lines.append(f'    free({var}.env);')
+        self.func_closure_vars = []
+                
         lines.append('}')
         self.in_function = False
         self.current_func_params = set()  # 清理
@@ -593,8 +612,10 @@ class CCodeGenerator:
                 closure_type = self._closure_type_for(len(params), ret_c_type)
                 lines.append(f'{closure_type} {var_name} = {{{var_name}_env, {fn_name}}};')
                 
-                if not self.in_function:
-                    self.closure_env_vars.add(var_name)
+                if self.in_function:
+                    self.func_closure_vars.append(var_name)
+                else:
+                    self.main_closure_vars.append(var_name)
                 
                 return '\n'.join(lines)
 
@@ -609,6 +630,10 @@ class CCodeGenerator:
         elif isinstance(type_str, str) and type_str.startswith('Closure_'):
             c_type = type_str
             self.closure_vars.add(var_name)
+            if self.in_function:
+                self.func_closure_vars.append(var_name)
+            else:
+                self.main_closure_vars.append(var_name)
         else:
             c_type = 'int'
 
