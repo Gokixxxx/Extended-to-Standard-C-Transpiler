@@ -31,6 +31,7 @@ class CCodeGenerator:
         self.closure_params = set()   # 当前函数中类型为闭包的参数名
         self.scope_stack = []        # 作用域栈，每个元素是 List[str]（该层声明的闭包变量名）
         self.scope_temp_closures = []   # 每个作用域的临时闭包列表，与 scope_stack 同步
+        self.closure_var_types = {}   # 闭包变量名 -> C 类型
 
     def generate(self, ast: Tuple, func_signatures: dict = None, fn_expr_captures: dict = None) -> str:
         self.includes.clear()
@@ -44,6 +45,7 @@ class CCodeGenerator:
         self.fn_expr_defs = []
         self.fn_expr_types = {}
         self.fn_expr_captures = fn_expr_captures or {}
+        self.closure_var_types = {}
 
         self.env_struct_defs = []
         self.closure_vars = set()
@@ -57,7 +59,10 @@ class CCodeGenerator:
             for node_id, caps in self.fn_expr_captures.items()
         }
         self._pre_scan(ast)
-        
+
+        # 提前进入 main 作用域（在生成任何顶层语句之前）
+        self._enter_scope()
+
         if ast[0] == 'program':
             for top in ast[1]:
                 if top[0] == 'func_def':
@@ -405,6 +410,9 @@ class CCodeGenerator:
                     return named_ret
                 if func_name in self.let_var_types:
                     return self.let_var_types[func_name]
+                if func_name in self.closure_var_types:
+                    closure_type = self.closure_var_types[func_name]
+                    return self.closure_type_ret_map.get(closure_type, 'int')
                 return 'int'
             # 2. callee 是闭包表达式（如 fn_expr 或 call 链中间结果）
             callee_type = self._infer_expr_type(callee_expr)
@@ -445,8 +453,6 @@ class CCodeGenerator:
 
     # ==================== 程序组装 ====================
     def _build_program(self) -> str:
-        self._enter_scope()     # 在 main 函数体开始前进入作用域
-
         lines = []
         lines.append('#include "option.h"')
         lines.append('#include "vec.h"')
@@ -648,6 +654,7 @@ class CCodeGenerator:
         elif isinstance(type_str, str) and type_str.startswith('Closure_'):
             c_type = type_str
             self.closure_vars.add(var_name)
+            self.closure_var_types[var_name] = c_type
             self._declare_closure_in_scope(var_name) 
         else:
             c_type = 'int'

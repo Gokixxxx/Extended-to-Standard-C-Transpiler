@@ -1,10 +1,56 @@
+let doubled = fn(x) {
+    return x * 2;
+};
+let r1 = doubled(10);
+
+let triple = fn x => x * 3;
+let r2 = triple(5);
+
+let add = fn(x, y) => x + y;
+let r3 = add(3, 4);
+
+let make_adder = fn(a) {
+    return fn(b) {
+        return a + b;
+    };
+};
+let add5 = make_adder(5);
+let r4 = add5(3);
+
+let r5 = make_adder(10)(2);
+
+let make_multiplier = fn(factor) {
+    return fn(x) {
+        return fn(y) {
+            return x * y * factor;
+        };
+    };
+};
+let m2 = make_multiplier(2);
+let m2x3 = m2(3);
+let r6 = m2x3(4);
+
+let outer = 100;
+let capture_test = fn(x) => outer + x;
+let r7 = capture_test(1);
+
+let base = 10;
+let make_complex = fn(a) => fn(b) => base + a + b;
+let r8 = make_complex(3)(4);
+
+fn apply_twice(f, x) {
+    return f(f(x));
+}
+let add3 = fn(y) => y + 3;
+let r9 = apply_twice(add3, 5);
+
 let x = 10;
 if (x > 5) {
     let f = fn(a) => x + a;
-    let r1 = f(1);
+    let r10 = f(1);
 } else {
     let g = fn(b) => x * b;
-    let r2 = g(2);
+    let r10 = g(2);
 }
 
 let arr = [1, 2, 3];
@@ -28,9 +74,9 @@ let flag = 1;
 if (flag > 0) {
     if (flag > 0) {
         let f = fn() => flag;
-        let r = f();
+        let r13 = f();
     }
 }
 
-let h = fn() => 42;
-let r0 = h();
+let get42 = fn() => 42;
+let r14 = get42();
