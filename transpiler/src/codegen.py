@@ -14,25 +14,25 @@ class CCodeGenerator:
         self.temp_counter = 0
         self.in_function = False
         self.func_signatures = {}
-        self.fn_expr_counter = 0          # 匿名函数编号计数器
-        self.fn_expr_defs = []            # 提升后的全局函数定义代码
-        self.fn_expr_types = {}           # fn_expr AST节点 → C函数指针类型字符串
+        self.fn_expr_counter = 0            # 匿名函数编号计数器
+        self.fn_expr_defs = []              # 提升后的全局函数定义代码
+        self.fn_expr_types = {}             # fn_expr AST节点 → C函数指针类型字符串
         self.fn_expr_captures = {}
-        self.env_struct_defs = []         # Env 结构体定义代码
-        self.closure_vars = set()         # 绑定闭包的变量名
+        self.env_struct_defs = []           # Env 结构体定义代码
+        self.closure_vars = set()           # 绑定闭包的变量名
         self.closure_return_funcs = set()   # 返回闭包的命名函数
         self.func_returns_closure = set()
-        self.temp_closures = []           # main() 中的临时闭包
-        self.func_temp_closures = []      # 当前命名函数/提升函数内的临时闭包
-        self.current_func_params = set()  # 当前命名函数的参数名（避免与顶层闭包变量冲突）
-        self.closure_struct_defs = {}   # 动态生成的闭包结构体定义
-        self.let_var_types = {}   # let 变量名 → C 返回类型
-        self.closure_type_ret_map = {}   # Closure_类型名 → fn 的返回类型
-        self.closure_params = set()   # 当前函数中类型为闭包的参数名
-        self.scope_stack = []        # 作用域栈，每个元素是 List[str]（该层声明的闭包变量名）
-        self.scope_temp_closures = []   # 每个作用域的临时闭包列表，与 scope_stack 同步
-        self.closure_var_types = {}   # 闭包变量名 -> C 类型
-        self.fn_ptr_targets = {}   # 变量名 -> 提升函数名，用于闭包包装时查找适配器
+        self.temp_closures = []             # main() 中的临时闭包
+        self.func_temp_closures = []        # 当前命名函数/提升函数内的临时闭包
+        self.current_func_params = set()    # 当前命名函数的参数名（避免与顶层闭包变量冲突）
+        self.closure_struct_defs = {}       # 动态生成的闭包结构体定义
+        self.let_var_types = {}             # let 变量名 → C 返回类型
+        self.closure_type_ret_map = {}      # Closure_类型名 → fn 的返回类型
+        self.closure_params = set()         # 当前函数中类型为闭包的参数名
+        self.scope_stack = []               # 作用域栈，每个元素是 List[str]（该层声明的闭包变量名）
+        self.scope_temp_closures = []       # 每个作用域的临时闭包列表，与 scope_stack 同步
+        self.closure_var_types = {}         # 闭包变量名 -> C 类型
+        self.fn_ptr_targets = {}            # 变量名 -> 提升函数名，用于闭包包装时查找适配器
 
     def generate(self, ast: Tuple, func_signatures: dict = None, fn_expr_captures: dict = None) -> str:
         self.includes.clear()
@@ -62,7 +62,7 @@ class CCodeGenerator:
         }
         self._pre_scan(ast)
 
-        # 提前进入 main 作用域（在生成任何顶层语句之前）
+        # 进入 main 作用域
         self._enter_scope()
 
         if ast[0] == 'program':
@@ -413,7 +413,7 @@ class CCodeGenerator:
             # 1. callee 是变量：优先查函数表/let变量表，避免被 Closure_ 短路
             if callee_expr[0] == 'var':
                 func_name = callee_expr[1]
-                # 如果是当前函数的参数，返回 int（参数类型由 semantic 层保证）
+                # 如果是当前函数的参数，返回 int
                 if func_name in getattr(self, 'current_func_params', set()):
                     return 'int'
                 func_info = self.func_signatures.get(func_name, {})
@@ -482,7 +482,7 @@ class CCodeGenerator:
             lines.append(closure_def)
             lines.append('')
         
-        # 先输出 Env 结构体（函数定义依赖它们）
+        # 输出 Env 结构体
         for env_def in self.env_struct_defs:
             lines.append(env_def)
             lines.append('')
@@ -519,10 +519,10 @@ class CCodeGenerator:
 
     # ==================== 函数定义 ====================
     def _gen_func_def(self, node: Tuple) -> str:
-        self._enter_scope()  # 函数级作用域
+        self._enter_scope()             # 函数级作用域
 
         self.func_temp_closures = []    # 清空当前函数的临时闭包列表
-        self.closure_params = set()   # 新增：每个函数独立
+        self.closure_params = set()     # 每个函数独立
 
         func_name = node[1]
         params = node[2]
@@ -919,7 +919,6 @@ class CCodeGenerator:
                 # 判断 callee 是否为闭包
                 is_closure = self._is_closure_callee(callee_expr)
                 # 生成参数代码
-                
                 # 获取形参类型列表，用于判断是否需要包装
                 param_types = []
                 if callee_expr[0] == 'var':
@@ -1043,7 +1042,6 @@ def test_codegen():
     ])
     
     codegen4 = CCodeGenerator()
-    print("测试 4 - 函数作为值:")
     print(codegen4.generate(ast4))
     print()
 
