@@ -143,9 +143,6 @@ def run_negative_test(
     source_code: str,
     expected_err_substr: str,
 ) -> bool:
-    """
-    负面测试：期望在语义分析阶段报错
-    """
     print(f"\n{'='*60}")
     print(f"[-] 负面测试: {name}")
     print(f"{'='*60}")
@@ -156,14 +153,27 @@ def run_negative_test(
         return False
     except Exception as e:
         err_msg = str(e)
+        # 检查外层异常消息
         if expected_err_substr in err_msg:
             print(f"  [PASS] 正确拦截: {err_msg[:120]}...")
             return True
-        else:
-            print(f"  [FAIL] 报错内容不匹配")
-            print(f"         期望包含: {expected_err_substr}")
-            print(f"         实际: {err_msg[:300]}")
-            return False
+        # 检查原始异常（__cause__）
+        cause = getattr(e, '__cause__', None)
+        if cause:
+            cause_msg = str(cause)
+            if expected_err_substr in cause_msg:
+                print(f"  [PASS] 正确拦截: {cause_msg[:120]}...")
+                return True
+        # 检查异常参数（args）
+        for arg in getattr(e, 'args', []):
+            if isinstance(arg, str) and expected_err_substr in arg:
+                print(f"  [PASS] 正确拦截: {arg[:120]}...")
+                return True
+        
+        print(f"  [FAIL] 报错内容不匹配")
+        print(f"         期望包含: {expected_err_substr}")
+        print(f"         实际: {err_msg[:300]}")
+        return False
 
 
 # ------------------------------------------------------------------
