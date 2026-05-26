@@ -32,6 +32,7 @@ class CCodeGenerator:
         self.scope_stack = []        # 作用域栈，每个元素是 List[str]（该层声明的闭包变量名）
         self.scope_temp_closures = []   # 每个作用域的临时闭包列表，与 scope_stack 同步
         self.closure_var_types = {}   # 闭包变量名 -> C 类型
+        self.fn_ptr_targets = {}   # 变量名 -> 提升函数名，用于闭包包装时查找适配器
 
     def generate(self, ast: Tuple, func_signatures: dict = None, fn_expr_captures: dict = None) -> str:
         self.includes.clear()
@@ -46,6 +47,7 @@ class CCodeGenerator:
         self.fn_expr_types = {}
         self.fn_expr_captures = fn_expr_captures or {}
         self.closure_var_types = {}
+        self.fn_ptr_targets = {}
 
         self.env_struct_defs = []
         self.closure_vars = set()
@@ -290,9 +292,25 @@ class CCodeGenerator:
         # 释放作用域栈中的闭包
         for free_stmt in self._exit_scope(lines):
             lines.append(f'    {free_stmt}')
-        
+
         self.in_function = saved_in_function
         lines.append('}')
+
+        # 为无捕获函数生成闭包 ABI 适配器（解决闭包参数传递时的签名不匹配）
+        if not has_captures:
+            adapter_name = f"{fn_name}_closure"
+            adapter_params = ['void *__env'] + [f'int {p}' for p in params]
+            adapter_param_str = ', '.join(adapter_params)
+            adapter_lines = [f'static {ret_type} {adapter_name}({adapter_param_str}) {{']
+            adapter_lines.append(f'    (void)__env;')
+            call_args = ', '.join(params)
+            if call_args:
+                adapter_lines.append(f'    return {fn_name}({call_args});')
+            else:
+                adapter_lines.append(f'    return {fn_name}();')
+            adapter_lines.append('}')
+            lines.extend(adapter_lines)   # 追加到当前函数定义后面，一起返回
+        
         return '\n'.join(lines)
     
     def _expr_is_closure(self, expr) -> bool:
@@ -623,6 +641,7 @@ class CCodeGenerator:
             if not captures:
                 # 无捕获：函数指针
                 param_str = ', '.join(['int'] * len(params)) if params else 'void'
+                self.fn_ptr_targets[var_name] = fn_name   # 记录映射，供闭包参数包装时查找适配器
                 return f'{ret_c_type} (*{var_name})({param_str}) = {fn_name};'
             else:
                 # 有捕获：闭包结构体
@@ -942,7 +961,21 @@ class CCodeGenerator:
                                         ret_c_type = self._closure_type(len(inner_params))
                                 closure_type = self._closure_type_for(len(fn_params), ret_c_type)
                                 tmp = self._new_temp()
-                                pre_stmts.append(f'{closure_type} {tmp} = {{NULL, {arg_code}}};')
+
+                                adapter_name = None
+                                if a[0] == 'fn_expr':
+                                    adapter_name = f"{arg_code}_closure"
+                                elif a[0] == 'var':
+                                    var_name = a[1]
+                                    target_fn = self.fn_ptr_targets.get(var_name)
+                                    if target_fn:
+                                        adapter_name = f"{target_fn}_closure"
+                                
+                                if adapter_name:
+                                    pre_stmts.append(f'{closure_type} {tmp} = {{NULL, {adapter_name}}};')
+                                else:
+                                    pre_stmts.append(f'{closure_type} {tmp} = {{NULL, {arg_code}}};')
+
                                 arg_codes.append(tmp)
                                 continue
                     arg_codes.append(arg_code)

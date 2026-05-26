@@ -7,38 +7,49 @@ typedef struct {
                 Closure_i32_i32 (*fn)(void *env, int);
             } Closure_Closure_i32_i32__i32;
 
-struct __env_5 {
+struct __env_2 {
+    int a;
+};
+
+struct __env_4 {
+    int x1;
+    int y1;
+    int a;
+};
+
+struct __env_3 {
+    int x1;
+    int y1;
+};
+
+struct __env_7 {
+    int a;
+    int b;
+};
+
+struct __env_6 {
     int a;
 };
 
 struct __env_8 {
-    int x;
-    int factor;
+    int base;
 };
 
-struct __env_7 {
+struct __env_10 {
     int factor;
-};
-
-struct __env_9 {
-    int outer;
 };
 
 struct __env_11 {
     int base;
-    int a;
+    int delta;
 };
 
-struct __env_10 {
+struct __env_12 {
     int base;
 };
 
 struct __env_13 {
-    int x;
-};
-
-struct __env_14 {
-    int x;
+    int base;
 };
 
 struct __env_15 {
@@ -46,99 +57,135 @@ struct __env_15 {
 };
 
 struct __env_16 {
-    int i;
+    int i1;
 };
 
 struct __env_17 {
+    int x2;
+};
+
+struct __env_18 {
+    int x2;
+};
+
+struct __env_19 {
     int flag;
 };
 
-static int __fn_1(int x) {
-    return (x * 2);
-}
+struct __env_21 {
+    int j;
+};
 
-static int __fn_2(int x) {
-    return (x * 3);
-}
-
-static int __fn_3(int x, int y) {
-    return (x + y);
-}
-
-static int __fn_5(void *__env, int b) {
-    struct __env_5 *env = (struct __env_5 *)__env;
+static int __fn_2(void *__env, int b) {
+    struct __env_2 *env = (struct __env_2 *)__env;
     int a = env->a;
     return (a + b);
 }
 
-static Closure_i32_i32 __fn_4(int a) {
-    struct __env_5 *__t1 = malloc(sizeof(struct __env_5));
+static Closure_i32_i32 __fn_1(int a) {
+    struct __env_2 *__t1 = malloc(sizeof(struct __env_2));
     __t1->a = a;
-    Closure_i32_i32 __t2 = {__t1, __fn_5};
+    Closure_i32_i32 __t2 = {__t1, __fn_2};
     return __t2;
 }
-
-static int __fn_8(void *__env, int y) {
-    struct __env_8 *env = (struct __env_8 *)__env;
-    int x = env->x;
-    int factor = env->factor;
-    return ((x * y) * factor);
+static Closure_i32_i32 __fn_1_closure(void *__env, int a) {
+    (void)__env;
+    return __fn_1(a);
 }
 
-static Closure_i32_i32 __fn_7(void *__env, int x) {
-    struct __env_7 *env = (struct __env_7 *)__env;
-    int factor = env->factor;
-    struct __env_8 *__t4 = malloc(sizeof(struct __env_8));
-    __t4->x = x;
-    __t4->factor = factor;
-    Closure_i32_i32 __t5 = {__t4, __fn_8};
+static int __fn_4(void *__env, int b) {
+    struct __env_4 *env = (struct __env_4 *)__env;
+    int x1 = env->x1;
+    int y1 = env->y1;
+    int a = env->a;
+    return (((x1 + y1) + a) + b);
+}
+
+static Closure_i32_i32 __fn_3(void *__env, int a) {
+    struct __env_3 *env = (struct __env_3 *)__env;
+    int x1 = env->x1;
+    int y1 = env->y1;
+    struct __env_4 *__t4 = malloc(sizeof(struct __env_4));
+    __t4->x1 = x1;
+    __t4->y1 = y1;
+    __t4->a = a;
+    Closure_i32_i32 __t5 = {__t4, __fn_4};
     return __t5;
 }
 
-static Closure_Closure_i32_i32__i32 __fn_6(int factor) {
-    struct __env_7 *__t6 = malloc(sizeof(struct __env_7));
-    __t6->factor = factor;
-    Closure_Closure_i32_i32__i32 __t7 = {__t6, __fn_7};
-    return __t7;
+static int __fn_7(void *__env, int c) {
+    struct __env_7 *env = (struct __env_7 *)__env;
+    int a = env->a;
+    int b = env->b;
+    return ((a + b) + c);
 }
 
-static int __fn_9(void *__env, int x) {
-    struct __env_9 *env = (struct __env_9 *)__env;
-    int outer = env->outer;
-    return (outer + x);
+static Closure_i32_i32 __fn_6(void *__env, int b) {
+    struct __env_6 *env = (struct __env_6 *)__env;
+    int a = env->a;
+    struct __env_7 *__t7 = malloc(sizeof(struct __env_7));
+    __t7->a = a;
+    __t7->b = b;
+    Closure_i32_i32 __t8 = {__t7, __fn_7};
+    return __t8;
 }
 
-static int __fn_11(void *__env, int b) {
+static Closure_Closure_i32_i32__i32 __fn_5(int a) {
+    struct __env_6 *__t9 = malloc(sizeof(struct __env_6));
+    __t9->a = a;
+    Closure_Closure_i32_i32__i32 __t10 = {__t9, __fn_6};
+    return __t10;
+}
+static Closure_Closure_i32_i32__i32 __fn_5_closure(void *__env, int a) {
+    (void)__env;
+    return __fn_5(a);
+}
+
+static int __fn_8(void *__env, int x) {
+    struct __env_8 *env = (struct __env_8 *)__env;
+    int base = env->base;
+    return (base + x);
+}
+
+static int __fn_9(int n) {
+    return (n * 2);
+}
+static int __fn_9_closure(void *__env, int n) {
+    (void)__env;
+    return __fn_9(n);
+}
+
+static int __fn_10(void *__env, int x) {
+    struct __env_10 *env = (struct __env_10 *)__env;
+    int factor = env->factor;
+    return (x * factor);
+}
+
+static int __fn_11(void *__env, int x) {
     struct __env_11 *env = (struct __env_11 *)__env;
     int base = env->base;
-    int a = env->a;
-    return ((base + a) + b);
+    int delta = env->delta;
+    return ((base + delta) + x);
 }
 
-static Closure_i32_i32 __fn_10(void *__env, int a) {
-    struct __env_10 *env = (struct __env_10 *)__env;
+static int __fn_12(void *__env, int x) {
+    struct __env_12 *env = (struct __env_12 *)__env;
     int base = env->base;
-    struct __env_11 *__t8 = malloc(sizeof(struct __env_11));
-    __t8->base = base;
-    __t8->a = a;
-    Closure_i32_i32 __t9 = {__t8, __fn_11};
-    return __t9;
+    return (base + x);
 }
 
-static int __fn_12(int y) {
-    return (y + 3);
-}
-
-static int __fn_13(void *__env, int a) {
+static int __fn_13(void *__env, int x) {
     struct __env_13 *env = (struct __env_13 *)__env;
-    int x = env->x;
-    return (x + a);
+    int base = env->base;
+    return (base + x);
 }
 
-static int __fn_14(void *__env, int b) {
-    struct __env_14 *env = (struct __env_14 *)__env;
-    int x = env->x;
-    return (x * b);
+static int __fn_14(int n) {
+    return (n * 2);
+}
+static int __fn_14_closure(void *__env, int n) {
+    (void)__env;
+    return __fn_14(n);
 }
 
 static int __fn_15(void *__env) {
@@ -149,116 +196,213 @@ static int __fn_15(void *__env) {
 
 static int __fn_16(void *__env) {
     struct __env_16 *env = (struct __env_16 *)__env;
-    int i = env->i;
-    return i;
+    int i1 = env->i1;
+    return i1;
 }
 
-static int __fn_17(void *__env) {
+static int __fn_17(void *__env, int a) {
     struct __env_17 *env = (struct __env_17 *)__env;
+    int x2 = env->x2;
+    return (x2 + a);
+}
+
+static int __fn_18(void *__env, int b) {
+    struct __env_18 *env = (struct __env_18 *)__env;
+    int x2 = env->x2;
+    return (x2 * b);
+}
+
+static int __fn_19(void *__env) {
+    struct __env_19 *env = (struct __env_19 *)__env;
     int flag = env->flag;
     return flag;
 }
 
-static int __fn_18(void) {
+static int __fn_20(void) {
     return 42;
+}
+static int __fn_20_closure(void *__env) {
+    (void)__env;
+    return __fn_20();
+}
+
+static int __fn_21(void *__env) {
+    struct __env_21 *env = (struct __env_21 *)__env;
+    int j = env->j;
+    return j;
+}
+
+Closure_i32_i32 make_adder1(int base) {
+    struct __env_8 *__t13 = malloc(sizeof(struct __env_8));
+    __t13->base = base;
+    Closure_i32_i32 __t14 = {__t13, __fn_8};
+    return __t14;
 }
 
 int apply_twice(Closure_i32_i32 f, int x) {
     return f.fn(f.env, f.fn(f.env, x));
 }
 
+Closure_i32_i32 make_multiplier(int factor) {
+    struct __env_10 *__t16 = malloc(sizeof(struct __env_10));
+    __t16->factor = factor;
+    Closure_i32_i32 __t17 = {__t16, __fn_10};
+    return __t17;
+}
+
+Closure_i32_i32 make_offset_adder(int base, int delta) {
+    struct __env_11 *__t18 = malloc(sizeof(struct __env_11));
+    __t18->base = base;
+    __t18->delta = delta;
+    Closure_i32_i32 __t19 = {__t18, __fn_11};
+    return __t19;
+}
+
+Closure_i32_i32 make_adder2(int base) {
+    struct __env_12 *__t20 = malloc(sizeof(struct __env_12));
+    __t20->base = base;
+    Closure_i32_i32 __t21 = {__t20, __fn_12};
+    return __t21;
+}
+
+int plain_add(int a, int b) {
+    return (a + b);
+}
+
+Closure_i32_i32 make_adder3(int base) {
+    struct __env_13 *__t22 = malloc(sizeof(struct __env_13));
+    __t22->base = base;
+    Closure_i32_i32 __t23 = {__t22, __fn_13};
+    return __t23;
+}
+
+int apply_twice2(Closure_i32_i32 f, int x) {
+    return f.fn(f.env, f.fn(f.env, x));
+}
+
 int main() {
-    int (*doubled)(int) = __fn_1;
-    int r1 = doubled(10);
-    int (*triple)(int) = __fn_2;
-    int r2 = triple(5);
-    int (*add)(int, int) = __fn_3;
-    int r3 = add(3, 4);
-    Closure_i32_i32 (*make_adder)(int) = __fn_4;
-    Closure_i32_i32 add5 = make_adder(5);
-    int r4 = add5.fn(add5.env, 3);
-    Closure_i32_i32 __t3 = make_adder(10);
-    int r5 = __t3.fn(__t3.env, 2);
-    Closure_Closure_i32_i32__i32 (*make_multiplier)(int) = __fn_6;
-    Closure_Closure_i32_i32__i32 m2 = make_multiplier(2);
-    Closure_i32_i32 m2x3 = m2.fn(m2.env, 3);
-    int r6 = m2x3.fn(m2x3.env, 4);
-    int outer = 100;
-    struct __env_9 *capture_test_env = malloc(sizeof(struct __env_9));
-    capture_test_env->outer = outer;
-    Closure_i32_i32 capture_test = {capture_test_env, __fn_9};
-    int r7 = capture_test.fn(capture_test.env, 1);
-    int base = 10;
-    struct __env_10 *make_complex_env = malloc(sizeof(struct __env_10));
-    make_complex_env->base = base;
-    Closure_Closure_i32_i32__i32 make_complex = {make_complex_env, __fn_10};
-    Closure_i32_i32 __t10 = make_complex.fn(make_complex.env, 3);
-    int r8 = __t10.fn(__t10.env, 4);
-    int (*add3)(int) = __fn_12;
-    Closure_i32_i32 __t11 = {NULL, add3};
-    int r9 = apply_twice(__t11, 5);
-    int x = 10;
-    if ((x > 5)) {
-        struct __env_13 *f_env = malloc(sizeof(struct __env_13));
-        f_env->x = x;
-        Closure_i32_i32 f = {f_env, __fn_13};
-        int r10 = f.fn(f.env, 1);
-        free(f.env);
+    Closure_i32_i32 (*add)(int) = __fn_1;
+    Closure_i32_i32 __t3 = add(3);
+    int r1 = __t3.fn(__t3.env, 4);
+    int x1 = 1;
+    int y1 = 2;
+    struct __env_3 *f1_env = malloc(sizeof(struct __env_3));
+    f1_env->x1 = x1;
+    f1_env->y1 = y1;
+    Closure_Closure_i32_i32__i32 f1 = {f1_env, __fn_3};
+    Closure_i32_i32 __t6 = f1.fn(f1.env, 3);
+    int r2 = __t6.fn(__t6.env, 4);
+    Closure_Closure_i32_i32__i32 (*triple)(int) = __fn_5;
+    Closure_Closure_i32_i32__i32 __t11 = triple(1);
+    Closure_i32_i32 __t12 = __t11.fn(__t11.env, 2);
+    int r3 = __t12.fn(__t12.env, 3);
+    Closure_i32_i32 add10 = make_adder1(10);
+    int r4 = add10.fn(add10.env, 5);
+    int (*doubled)(int) = __fn_9;
+    Closure_i32_i32 __t15 = {NULL, __fn_9_closure};
+    int r5 = apply_twice(__t15, 3);
+    Closure_i32_i32 triple_fn = make_multiplier(3);
+    int r6 = triple_fn.fn(triple_fn.env, 7);
+    Closure_i32_i32 add_150 = make_offset_adder(100, 50);
+    int r7 = add_150.fn(add_150.env, 7);
+    Closure_i32_i32 add5 = make_adder2(5);
+    Closure_i32_i32 add100 = make_adder2(100);
+    int r8 = add5.fn(add5.env, 3);
+    int r9 = add100.fn(add100.env, 3);
+    int a1 = plain_add(2, 3);
+    Closure_i32_i32 add10b = make_adder3(10);
+    int b1 = add10b.fn(add10b.env, 5);
+    int (*doubled2)(int) = __fn_14;
+    Closure_i32_i32 __t24 = {NULL, __fn_14_closure};
+    int c1 = apply_twice2(__t24, 4);
+    Vec_i32 arr1 = vec_new_i32();
+    vec_push_i32(&arr1, 1);
+    vec_push_i32(&arr1, 2);
+    vec_push_i32(&arr1, 3);
+    int sum1 = 0;
+    {
+        int __t25 = 0;
+        for (; __t25 < vec_len_i32(arr1); __t25++) {
+            int j = vec_get_i32(arr1, __t25);
+            struct __env_15 *f2_env = malloc(sizeof(struct __env_15));
+            f2_env->j = j;
+            Closure_i32 f2 = {f2_env, __fn_15};
+            int r10 = f2.fn(f2.env);
+            sum1 = (sum1 + r10);
+            free(f2.env);
+        }
+    }
+    int r11 = sum1;
+    int i1 = 0;
+    int wsum = 0;
+    while ((i1 < 3)) {
+        struct __env_16 *f3_env = malloc(sizeof(struct __env_16));
+        f3_env->i1 = i1;
+        Closure_i32 f3 = {f3_env, __fn_16};
+        int r12 = f3.fn(f3.env);
+        wsum = (wsum + r12);
+        i1 = (i1 + 1);
+        free(f3.env);
+    }
+    int r13 = wsum;
+    int x2 = 10;
+    int r14 = 0;
+    if ((x2 > 5)) {
+        struct __env_17 *f4_env = malloc(sizeof(struct __env_17));
+        f4_env->x2 = x2;
+        Closure_i32_i32 f4 = {f4_env, __fn_17};
+        r14 = f4.fn(f4.env, 1);
+        free(f4.env);
     }
     else {
-        struct __env_14 *g_env = malloc(sizeof(struct __env_14));
-        g_env->x = x;
-        Closure_i32_i32 g = {g_env, __fn_14};
-        int r10 = g.fn(g.env, 2);
-        free(g.env);
-    }
-    Vec_i32 arr = vec_new_i32();
-    vec_push_i32(&arr, 1);
-    vec_push_i32(&arr, 2);
-    vec_push_i32(&arr, 3);
-    int sum = 0;
-    {
-        int __t12 = 0;
-        for (; __t12 < vec_len_i32(arr); __t12++) {
-            int j = vec_get_i32(arr, __t12);
-            struct __env_15 *f_env = malloc(sizeof(struct __env_15));
-            f_env->j = j;
-            Closure_i32 f = {f_env, __fn_15};
-            int r = f.fn(f.env);
-            sum = (sum + r);
-            free(f.env);
-        }
-    }
-    int i = 0;
-    int wsum = 0;
-    while ((i < 3)) {
-        struct __env_16 *f_env = malloc(sizeof(struct __env_16));
-        f_env->i = i;
-        Closure_i32 f = {f_env, __fn_16};
-        int r = f.fn(f.env);
-        wsum = (wsum + r);
-        i = (i + 1);
-        free(f.env);
+        struct __env_18 *g1_env = malloc(sizeof(struct __env_18));
+        g1_env->x2 = x2;
+        Closure_i32_i32 g1 = {g1_env, __fn_18};
+        r14 = g1.fn(g1.env, 2);
+        free(g1.env);
     }
     int flag = 1;
+    int r15 = 0;
     if ((flag > 0)) {
         if ((flag > 0)) {
-            struct __env_17 *f_env = malloc(sizeof(struct __env_17));
-            f_env->flag = flag;
-            Closure_i32 f = {f_env, __fn_17};
-            int r13 = f.fn(f.env);
-            free(f.env);
+            struct __env_19 *f5_env = malloc(sizeof(struct __env_19));
+            f5_env->flag = flag;
+            Closure_i32 f5 = {f5_env, __fn_19};
+            r15 = f5.fn(f5.env);
+            free(f5.env);
         }
     }
-    int (*get42)(void) = __fn_18;
-    int r14 = get42();
-    free(arr.data);
+    int (*get42)(void) = __fn_20;
+    int r16 = get42();
+    Vec_i32 arr2 = vec_new_i32();
+    vec_push_i32(&arr2, 1);
+    vec_push_i32(&arr2, 2);
+    vec_push_i32(&arr2, 3);
+    int sum2 = 0;
+    {
+        int __t26 = 0;
+        for (; __t26 < vec_len_i32(arr2); __t26++) {
+            int j = vec_get_i32(arr2, __t26);
+            struct __env_21 *f7_env = malloc(sizeof(struct __env_21));
+            f7_env->j = j;
+            Closure_i32 f7 = {f7_env, __fn_21};
+            sum2 = (sum2 + f7.fn(f7.env));
+            free(f7.env);
+        }
+    }
+    int r18 = sum2;
+    free(arr1.data);
+    free(arr2.data);
     free(__t3.env);
-    free(__t10.env);
+    free(__t6.env);
+    free(__t11.env);
+    free(__t12.env);
+    free(f1.env);
+    free(add10.env);
+    free(triple_fn.env);
+    free(add_150.env);
     free(add5.env);
-    free(m2.env);
-    free(m2x3.env);
-    free(capture_test.env);
-    free(make_complex.env);
+    free(add100.env);
+    free(add10b.env);
     return 0;
 }
