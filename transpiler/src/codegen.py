@@ -20,8 +20,6 @@ class CCodeGenerator:
         self.fn_expr_captures = {}
         self.env_struct_defs = []         # Env 结构体定义代码
         self.closure_vars = set()         # 绑定闭包的变量名
-        self.main_closure_vars = []       # main 中声明的闭包变量名
-        self.func_closure_vars = []       # 当前命名函数/提升函数内的闭包变量名
         self.closure_return_funcs = set()   # 返回闭包的命名函数
         self.func_returns_closure = set()
         self.temp_closures = []           # main() 中的临时闭包
@@ -31,6 +29,8 @@ class CCodeGenerator:
         self.let_var_types = {}   # let 变量名 → C 返回类型
         self.closure_type_ret_map = {}   # Closure_类型名 → fn 的返回类型
         self.closure_params = set()   # 当前函数中类型为闭包的参数名
+        self.scope_stack = []        # 作用域栈，每个元素是 List[str]（该层声明的闭包变量名）
+        self.scope_temp_closures = []   # 每个作用域的临时闭包列表，与 scope_stack 同步
 
     def generate(self, ast: Tuple, func_signatures: dict = None, fn_expr_captures: dict = None) -> str:
         self.includes.clear()
@@ -48,8 +48,7 @@ class CCodeGenerator:
         self.env_struct_defs = []
         self.closure_vars = set()
         self.closure_return_funcs = set()
-        self.main_closure_vars = []
-        self.func_closure_vars = []
+        self.scope_stack = []
         self.func_returns_closure = set()
         self.temp_closures = []
         self.current_func_params = set()
@@ -232,9 +231,9 @@ class CCodeGenerator:
     def _gen_fn_expr_def(self, node: Tuple, fn_name: str) -> str:
         """将 fn_expr 提升为全局 static 函数（支持闭包 env）"""
         saved_in_function = self.in_function
-        saved_func_closure_vars = self.func_closure_vars
         self.in_function = True
-        self.func_closure_vars = []
+
+        self._enter_scope()   # 提升函数级作用域
 
         self.func_temp_closures = []  # 清空提升函数的临时闭包列表
 
@@ -283,14 +282,11 @@ class CCodeGenerator:
             lines.append(f'    free({tmp}.env);')
         self.func_temp_closures = []
 
-        # 释放提升函数内的局部闭包变量 Env
-        for var in self.func_closure_vars:
-            lines.append(f'    free({var}.env);')
-
-        # 恢复状态
+        # 释放作用域栈中的闭包
+        for free_stmt in self._exit_scope(lines):
+            lines.append(f'    {free_stmt}')
+        
         self.in_function = saved_in_function
-        self.func_closure_vars = saved_func_closure_vars
-                
         lines.append('}')
         return '\n'.join(lines)
     
@@ -307,6 +303,29 @@ class CCodeGenerator:
         elif op == 'call':
             return self._expr_returns_closure(expr)
         return False
+    
+    def _enter_scope(self):
+        """进入新作用域"""
+        self.scope_stack.append([])
+
+    def _exit_scope(self, lines: list) -> list:
+        """
+        退出当前作用域，返回需要在块末尾插入的 free 语句列表
+        lines: 当前块已有的代码行列表（用于计算缩进）
+        """
+        if not self.scope_stack:
+            return []
+        vars_to_free = self.scope_stack.pop()
+        free_stmts = [f"free({var}.env);" for var in vars_to_free]
+        return free_stmts
+
+    def _declare_closure_in_scope(self, var_name: str):
+        """在当前作用域中声明一个闭包变量"""
+        if self.scope_stack:
+            self.scope_stack[-1].append(var_name)
+        else:
+            # 顶层（不在任何块中），退化为原来的行为
+            pass  # 或者保持到全局列表，视情况
 
     # ==================== 类型推断 ====================
     def _infer_func_return_type(self, node: Tuple):
@@ -426,6 +445,8 @@ class CCodeGenerator:
 
     # ==================== 程序组装 ====================
     def _build_program(self) -> str:
+        self._enter_scope()     # 在 main 函数体开始前进入作用域
+
         lines = []
         lines.append('#include "option.h"')
         lines.append('#include "vec.h"')
@@ -459,22 +480,23 @@ class CCodeGenerator:
         
         for var in self.vec_vars:
             lines.append(f"    free({var}.data);")
-        
-        # 释放 main 中的闭包变量 Env
-        for var in self.main_closure_vars:
-            lines.append(f"    free({var}.env);")
 
-        # 释放临时闭包 Env
+        # main 中的临时闭包释放
         for tmp in self.temp_closures:
             lines.append(f"    free({tmp}.env);")
         
+        # 在 return 0 之前退出作用域
+        for free_stmt in self._exit_scope(lines):
+            lines.append(f"    {free_stmt}")
+
         lines.append('    return 0;')
         lines.append('}')
-        
         return '\n'.join(lines)
 
     # ==================== 函数定义 ====================
     def _gen_func_def(self, node: Tuple) -> str:
+        self._enter_scope()  # 函数级作用域
+
         self.func_temp_closures = []    # 清空当前函数的临时闭包列表
         self.closure_params = set()   # 新增：每个函数独立
 
@@ -539,14 +561,13 @@ class CCodeGenerator:
         for tmp in self.func_temp_closures:
             lines.append(f'    free({tmp}.env);')
         self.func_temp_closures = []
-        # 释放当前函数内的闭包变量 Env
-        for var in self.func_closure_vars:
-            lines.append(f'    free({var}.env);')
-        self.func_closure_vars = []
-                
+        # 释放函数级作用域中的闭包
+        for free_stmt in self._exit_scope(lines):
+            lines.append(f'    {free_stmt}')
+        
         lines.append('}')
         self.in_function = False
-        self.current_func_params = set()  # 清理
+        self.current_func_params = set()
         return '\n'.join(lines)
 
     # ==================== 顶层语句 ====================
@@ -612,10 +633,7 @@ class CCodeGenerator:
                 closure_type = self._closure_type_for(len(params), ret_c_type)
                 lines.append(f'{closure_type} {var_name} = {{{var_name}_env, {fn_name}}};')
                 
-                if self.in_function:
-                    self.func_closure_vars.append(var_name)
-                else:
-                    self.main_closure_vars.append(var_name)
+                self._declare_closure_in_scope(var_name)
                 
                 return '\n'.join(lines)
 
@@ -630,10 +648,7 @@ class CCodeGenerator:
         elif isinstance(type_str, str) and type_str.startswith('Closure_'):
             c_type = type_str
             self.closure_vars.add(var_name)
-            if self.in_function:
-                self.func_closure_vars.append(var_name)
-            else:
-                self.main_closure_vars.append(var_name)
+            self._declare_closure_in_scope(var_name) 
         else:
             c_type = 'int'
 
@@ -721,17 +736,26 @@ class CCodeGenerator:
         then_stmts = node[2]
         else_stmts = node[3]
         
+        # then 分支
+        self._enter_scope()
         lines = [f"if ({cond}) {{"]
         for stmt in then_stmts:
             for line in self._gen_stmt(stmt).split('\n'):
                 lines.append(f"    {line}")
+        # 退出 then 作用域，生成释放
+        for free_stmt in self._exit_scope(lines):
+            lines.append(f"    {free_stmt}")
         lines.append("}")
         
+        # else 分支
         if else_stmts:
+            self._enter_scope()
             lines.append("else {")
             for stmt in else_stmts:
                 for line in self._gen_stmt(stmt).split('\n'):
                     lines.append(f"    {line}")
+            for free_stmt in self._exit_scope(lines):
+                lines.append(f"    {free_stmt}")
             lines.append("}")
         
         return '\n'.join(lines)
@@ -744,6 +768,8 @@ class CCodeGenerator:
         
         idx = self._new_temp()
         
+        self._enter_scope()  # 循环体作用域
+        
         lines = [
             f"{{",
             f"    int {idx} = 0;",
@@ -755,6 +781,10 @@ class CCodeGenerator:
             for line in self._gen_stmt(stmt).split('\n'):
                 lines.append(f"        {line}")
         
+        # 循环体末尾释放闭包（每次迭代都释放）
+        for free_stmt in self._exit_scope(lines):
+            lines.append(f"        {free_stmt}")
+        
         lines.append("    }")
         lines.append("}")
         
@@ -765,12 +795,17 @@ class CCodeGenerator:
         cond = self._generate_expr(node[1])
         body = node[2]
         
+        self._enter_scope()  # 循环体作用域
+        
         lines = [f"while ({cond}) {{"]
         for stmt in body:
             for line in self._gen_stmt(stmt).split('\n'):
                 lines.append(f"    {line}")
-        lines.append("}")
         
+        for free_stmt in self._exit_scope(lines):
+            lines.append(f"    {free_stmt}")
+        
+        lines.append("}")
         return '\n'.join(lines)
 
     # ==================== 通用表达式生成 ====================
@@ -930,7 +965,10 @@ class CCodeGenerator:
                 
                 # 构建调用
                 if is_closure:
-                    call_code = f"{callee_code}.fn({callee_code}.env, {', '.join(arg_codes)})"
+                    if arg_codes:
+                        call_code = f"{callee_code}.fn({callee_code}.env, {', '.join(arg_codes)})"
+                    else:
+                        call_code = f"{callee_code}.fn({callee_code}.env)"
                 else:
                     call_code = f"{callee_code}({', '.join(arg_codes)})"
                 
