@@ -29,6 +29,18 @@ class SemanticAnalyzer:
         self.fn_expr_captures.clear()
         self._fn_expr_depth = 0
 
+    # === 4.14限制 ===
+    def _is_closure_var_ref(self, node) -> bool:
+        """判断 AST 节点是否是『已绑定到闭包值的变量引用』
+        （即 fn_expr 字面量以外的闭包类型变量）"""
+        if isinstance(node, tuple) and node[0] == 'var':
+            var_name = node[1]
+            var_type = self.lookup(var_name)
+            # 类型是函数类型，且不是当前正在定义的 fn_expr 参数
+            if isinstance(var_type, str) and var_type.startswith('fn('):
+                return True
+        return False
+
     # ============ 作用域管理 ============
     def enter_scope(self):
         self.symbol_table.append({})
@@ -288,8 +300,16 @@ class SemanticAnalyzer:
     # ============ 赋值 ============
     def visit_assign(self, node: Tuple):
         lhs = node[1]
-        expr_node = node[2]
+        expr_node = node[2]        
         expr_type = self.visit_expr(expr_node)
+
+        # === 4.14 临时限制 ===
+        if self._is_closure_var_ref(expr_node):
+            self.errors.append(
+                f"错误: 暂不支持将闭包变量 '{expr_node[1]}' 赋值给其它变量（4.14 待实现）"
+            )
+            return
+        # ====================
 
         if lhs[0] == 'var':
             var_name = lhs[1]
@@ -391,6 +411,15 @@ class SemanticAnalyzer:
     def visit_let_decl(self, node: Tuple):
         var_name = node[1]
         expr_node = node[2]
+
+        # === 4.14 临时限制 ===
+        if self._is_closure_var_ref(expr_node):
+            self.errors.append(
+                f"错误: 暂不支持将闭包变量 '{expr_node[1]}' 赋值给其他变量（4.14 待实现）"
+            )
+            return
+        # ====================
+
         expr_type = self.visit_expr(expr_node)
         self.declare(var_name, expr_type)
 
@@ -401,7 +430,16 @@ class SemanticAnalyzer:
             self.errors.append("错误: return 语句只能在函数内部使用")
             return
 
+        expr_node = node[1]
         expr_type = self.visit_expr(node[1])
+
+        # === 4.14 临时限制 ===
+        if self._is_closure_var_ref(expr_node):
+            self.errors.append(
+                f"错误: 暂不支持返回闭包变量 '{expr_node[1]}'，请直接返回闭包字面量（4.14 待实现）"
+            )
+            return
+        # ====================
         
         # 匿名函数不更新 func_table（因为不在其中）
         if self.current_func == '<anonymous>':
