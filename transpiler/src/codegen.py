@@ -432,7 +432,11 @@ class CCodeGenerator:
                 if named_ret:
                     return named_ret
                 if func_name in self.let_var_types:
-                    return self.let_var_types[func_name]
+                    fn_type = self.let_var_types[func_name]
+                    parsed = self._parse_fn_type(fn_type)
+                    if parsed:
+                        _, ret = parsed
+                        return self._c_type_from_str(ret)
                 if func_name in self.closure_var_types:
                     closure_type = self.closure_var_types[func_name]
                     return self.closure_type_ret_map.get(closure_type, 'int')
@@ -613,8 +617,6 @@ class CCodeGenerator:
             # 4.14 步骤3：return 转移
             if isinstance(expr_node, tuple) and expr_node[0] == 'var' and expr_node[1] in self.closure_vars:
                 src_name = expr_node[1]
-                move_stmt = f'{src_name}.env = NULL;\n'
-                # 从作用域栈移除，避免 _exit_scope 生成死代码 free
                 if self.scope_stack:
                     for scope in self.scope_stack:
                         if src_name in scope:
@@ -641,6 +643,27 @@ class CCodeGenerator:
     def _gen_let(self, node: Tuple) -> str:
         var_name = node[1]
         expr = node[2]
+
+        # 新增：右侧是函数类型变量（无捕获函数指针 / 闭包变量）
+        if isinstance(expr, tuple) and expr[0] == 'var':
+            src_name = expr[1]
+            src_type = self._infer_expr_type(expr)
+            if isinstance(src_type, str) and src_type.startswith('fn('):
+                # 无捕获函数指针变量
+                if src_name not in self.closure_vars:
+                    parsed = self._parse_fn_type(src_type)
+                    if parsed:
+                        params, ret = parsed
+                        param_count = len([p for p in params if p.strip()])
+                        ret_c_type = self._c_type_from_str(ret)
+                        if isinstance(ret, str) and ret.startswith('fn('):
+                            inner_parsed = self._parse_fn_type(ret)
+                            if inner_parsed:
+                                inner_params, _ = inner_parsed
+                                ret_c_type = self._closure_type(len(inner_params))
+                        param_str = ', '.join(['int'] * param_count) if param_count > 0 else 'void'
+                        self.let_var_types[var_name] = src_type
+                        return f'{ret_c_type} (*{var_name})({param_str}) = {src_name};'
         
         if isinstance(expr, tuple) and expr[0] == 'fn_expr':
             captures = self.fn_expr_captures.get(id(expr), [])
@@ -658,7 +681,10 @@ class CCodeGenerator:
             if not captures:
                 # 无捕获：函数指针
                 param_str = ', '.join(['int'] * len(params)) if params else 'void'
-                self.fn_ptr_targets[var_name] = fn_name   # 记录映射，供闭包参数包装时查找适配器
+                self.fn_ptr_targets[var_name] = fn_name
+                # 记录语义类型，供后续变量引用推断（如 let g = doubled）
+                fn_semantic_type = f"fn({','.join(['i32'] * len(params))})->i32"
+                self.let_var_types[var_name] = fn_semantic_type
                 return f'{ret_c_type} (*{var_name})({param_str}) = {fn_name};'
             else:
                 # 有捕获：闭包结构体

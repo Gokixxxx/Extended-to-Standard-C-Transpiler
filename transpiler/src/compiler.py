@@ -208,6 +208,23 @@ def test_compiler():
         print(f"错误: {e}")
     print()
 
+    # 测试 11：无捕获函数应允许复制，不触发 move
+    print("测试 11 - 无捕获函数可复制:")
+    source11 = """
+    let doubled = fn(x) => x * 2;
+    let g = doubled;
+    let h = doubled;
+    let r1 = g(5);
+    let r2 = h(5);
+    """
+    compiler11 = Compiler()
+    try:
+        c_code11 = compiler11.compile(source11)
+        print(c_code11)
+    except Exception as e:
+        print(f"错误: {e}")
+    print()
+
 
 def main():
     """命令行接口"""

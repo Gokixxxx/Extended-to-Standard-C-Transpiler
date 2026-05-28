@@ -1,47 +1,32 @@
-let base = 10;
-let f1 = fn(x) => base + x;
-let g1 = f1;
-let r1 = g1(5);
+let a = 10;
+let f = fn(x) => a + x;
+let g = f;
+let r1 = g(5);
 
-fn make_adder(offset) {
-    let inner = fn(y) => offset + y;
-    return inner;
+let double = fn(x) => x * 2;
+let d1 = double;
+let d2 = double;
+let r2 = d1(3);
+let r3 = d2(4);
+
+fn make_adder(x) {
+    let adder = fn(y) => x + y;
+    return adder;
 }
 let add5 = make_adder(5);
-let r2 = add5(3);
+let r4 = add5(3);
 
-let a3 = 1;
-let h = fn(x) => a3 + x;
-let b3 = 2;
-let k = fn(x) => b3 + x;
-h = k;
-let r3 = h(10);
+let b = 1;
+let f1 = fn(x) => b + x;
+let f2 = fn(x) => b * 2 + x;
+f2 = f1;
+let r5 = f2(10);
 
-let d = 100;
-let m = fn(x) => d + x;
-let n = m;
-let p = n;
-let r4 = p(1);
-
-let e = 7;
-let outer = fn(a) => fn(b) => e + a + b;
-let mid = outer(3);
-let final = mid;
-let r5 = final(4);
-
-let cond = 1;
-let base6 = 20;
-let branch_fn = fn(x) => base6 + x;
-let moved = fn(x) => base6 + x;
-if cond > 0 {
-    moved = branch_fn;
-} else {
-    let alt = fn(x) => base6 + x;
-    moved = alt;
+fn apply_twice(f, x) {
+    return f(f(x));
 }
-let r6 = moved(2);
+let add3 = fn(x) => x + 3;
+let r6 = apply_twice(add3, 5);
 
-let loop_base = 0;
-let loop_fn = fn(x) => loop_base + x;
-let saved = loop_fn;
-let r7 = saved(99);
+let add = fn(a) => fn(b) => a + b;
+let r7 = add(3)(4);

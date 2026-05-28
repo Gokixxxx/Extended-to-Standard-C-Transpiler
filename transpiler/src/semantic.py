@@ -17,7 +17,8 @@ class SemanticAnalyzer:
         self._predeclared: Dict[str, str] = {}
         self.fn_expr_captures: Dict[int, List[str]] = {}
         self._fn_expr_depth = 0   # fn_expr 嵌套深度
-        self.moved_vars = set()   # 4.14 新增：记录已被移动（move）的闭包变量
+        self.moved_vars = set()   # 记录已被移动（move）的闭包变量
+        self.captured_closure_vars = set()   # 有捕获闭包变量名
 
     def reset(self):
         self.symbol_table = [{}]
@@ -30,17 +31,21 @@ class SemanticAnalyzer:
         self.fn_expr_captures.clear()
         self._fn_expr_depth = 0
         self.moved_vars.clear()
+        self.captured_closure_vars.clear()
 
     # === 4.14限制 ===
-    def _is_closure_var_ref(self, node) -> bool:
-        """判断 AST 节点是否是『已绑定到闭包值的变量引用』
-        （即 fn_expr 字面量以外的闭包类型变量）"""
+    def _is_local_var(self, name: str) -> bool:
+        """检查变量是否在当前最内层作用域中声明（参数或局部变量）"""
+        return bool(self.symbol_table and name in self.symbol_table[-1])
+
+    def _is_captured_closure_var_ref(self, node) -> bool:
+        """判断 AST 节点是否是『已绑定到有捕获闭包值的变量引用』"""
         if isinstance(node, tuple) and node[0] == 'var':
             var_name = node[1]
-            var_type = self.lookup(var_name)
-            # 类型是函数类型，且不是当前正在定义的 fn_expr 参数
-            if isinstance(var_type, str) and var_type.startswith('fn('):
-                return True
+            # 如果是当前作用域的局部变量（参数或本作用域 let），不触发 move
+            if self._is_local_var(var_name):
+                return False
+            return var_name in self.captured_closure_vars
         return False
 
     # ============ 作用域管理 ============
@@ -315,7 +320,7 @@ class SemanticAnalyzer:
                 self.errors.append(f"错误: 不能将 {expr_type} 赋值给 {var_type} 类型的变量 '{var_name}'")
 
             # 4.14：若右侧是闭包变量，标记源变量已被移动
-            if self._is_closure_var_ref(expr_node):
+            if self._is_captured_closure_var_ref(expr_node):
                 src_name = expr_node[1]
                 self.moved_vars.add(src_name)
 
@@ -414,8 +419,19 @@ class SemanticAnalyzer:
         expr_type = self.visit_expr(expr_node)
         self.declare(var_name, expr_type)
 
-        # 4.14：若右侧是闭包变量，标记源变量已被移动
-        if self._is_closure_var_ref(expr_node):
+        # 判断本变量是否绑定到有捕获闭包（直接字面量 或 调用返回）
+        if isinstance(expr_node, tuple) and expr_node[0] == 'fn_expr':
+            # 直接绑定 fn_expr 字面量：有捕获才加入
+            if (id(expr_node) in self.fn_expr_captures 
+                    and self.fn_expr_captures[id(expr_node)]):
+                self.captured_closure_vars.add(var_name)
+        elif isinstance(expr_type, str) and expr_type.startswith('fn('):
+            # 通过调用/其他表达式获得函数类型：保守假设为有捕获闭包
+            # （如 add(3) 返回的闭包，make_adder(5) 返回的闭包）
+            self.captured_closure_vars.add(var_name)
+
+        # 4.14：若右侧是有捕获闭包变量，标记源变量已被移动
+        if self._is_captured_closure_var_ref(expr_node):
             src_name = expr_node[1]
             self.moved_vars.add(src_name)
 
@@ -430,7 +446,7 @@ class SemanticAnalyzer:
         expr_type = self.visit_expr(node[1])
 
         # 4.14：若返回的是闭包变量，标记为已移动
-        if self._is_closure_var_ref(expr_node):
+        if self._is_captured_closure_var_ref(expr_node):
             src_name = expr_node[1]
             self.moved_vars.add(src_name)
         
@@ -711,7 +727,7 @@ class SemanticAnalyzer:
                 name = node[1]
 
                 # 4.14：检查是否已被移动
-                if name in self.moved_vars:
+                if not self._is_local_var(name) and name in self.moved_vars:
                     self.errors.append(f"错误: 变量 '{name}' 已被移动，不能再次使用")
                     return 'unknown'
 
