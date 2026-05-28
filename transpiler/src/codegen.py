@@ -368,6 +368,17 @@ class CCodeGenerator:
                     return 'i32'
         return 'i32'
 
+    def _semantic_type_to_closure_type(self, type_str: str) -> str:
+        """递归把语义类型字符串（如 fn(i32)->fn(i32)->i32）转为 C 闭包类型名"""
+        if not isinstance(type_str, str) or not type_str.startswith('fn('):
+            return self._c_type_from_str(type_str)
+        parsed = self._parse_fn_type(type_str)
+        if not parsed:
+            return 'int'
+        params, ret = parsed
+        ret_c_type = self._semantic_type_to_closure_type(ret)
+        return self._closure_type_for(len(params), ret_c_type)
+
     # ==================== 类型推断 ====================
     def _infer_func_return_type(self, node: Tuple):
         func_name = node[1]
@@ -452,12 +463,8 @@ class CCodeGenerator:
                     parsed = self._parse_fn_type(fn_type)
                     if parsed:
                         _, ret = parsed
-                        # 如果返回类型是函数类型，返回对应的闭包类型
                         if isinstance(ret, str) and ret.startswith('fn('):
-                            inner_parsed = self._parse_fn_type(ret)
-                            if inner_parsed:
-                                inner_params, _ = inner_parsed
-                                return self._closure_type(len(inner_params))
+                            return self._semantic_type_to_closure_type(ret)
                         return self._c_type_from_str(ret)
                 if func_name in self.closure_var_types:
                     closure_type = self.closure_var_types[func_name]

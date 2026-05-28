@@ -402,6 +402,96 @@ def test_vec_with_closure():
         expected_outputs=["6"],
     )
 
+# ------------------------------------------------------------------
+# 4.14 所有权转移测试用例
+# ------------------------------------------------------------------
+def test_let_move():
+    return run_positive_test(
+        "let 转移：闭包变量复制后原变量置空",
+        """
+        let a = 10;
+        let f = fn(x) => a + x;
+        let g = f;
+        let r1 = g(5);
+        """,
+        result_vars=["r1"],
+        expected_outputs=["15"],
+    )
+
+
+def test_assign_move():
+    return run_positive_test(
+        "assign 转移：闭包变量赋值后原变量置空",
+        """
+        let b = 1;
+        let f1 = fn(x) => b + x;
+        let f2 = fn(x) => b * 2 + x;
+        f2 = f1;
+        let r2 = f2(10);
+        """,
+        result_vars=["r2"],
+        expected_outputs=["11"],
+    )
+
+
+def test_return_move():
+    return run_positive_test(
+        "return 转移：命名函数返回闭包",
+        """
+        fn make_adder(x) {
+            let adder = fn(y) => x + y;
+            return adder;
+        }
+        let add5 = make_adder(5);
+        let r3 = add5(3);
+        """,
+        result_vars=["r3"],
+        expected_outputs=["8"],
+    )
+
+
+def test_uncaptured_fn_copyable():
+    return run_positive_test(
+        "无捕获函数可复制：多次赋值不触发 move",
+        """
+        let doubled = fn(x) => x * 2;
+        let d1 = doubled;
+        let d2 = doubled;
+        let r4 = d1(3);
+        let r5 = d2(4);
+        """,
+        result_vars=["r4", "r5"],
+        expected_outputs=["6", "8"],
+    )
+
+
+def test_closure_as_param_move():
+    return run_positive_test(
+        "闭包作为参数传递（自动包装）",
+        """
+        fn apply_twice(f, x) {
+            return f(f(x));
+        }
+        let add3 = fn(x) => x + 3;
+        let r6 = apply_twice(add3, 5);
+        """,
+        result_vars=["r6"],
+        expected_outputs=["11"],
+    )
+
+
+# 4.14 负面测试：use-after-move 应被拦截（当前语义层未实现，预留）
+def test_use_after_move_should_fail():
+    return run_negative_test(
+        "use-after-move 应报错",
+        """
+        let a = 1;
+        let f = fn(x) => a + x;
+        let g = f;
+        let h = f;
+        """,
+        expected_err_substr="已被移动",
+    )
 
 # ------------------------------------------------------------------
 # 负面测试用例
@@ -455,6 +545,19 @@ def test_call_non_function():
         expected_err_substr="不能",
     )
 
+# 4.14 负面测试：use-after-move 应被拦截（当前语义层未实现，预留）
+def test_use_after_move_should_fail():
+    return run_negative_test(
+        "use-after-move 应报错",
+        """
+        let a = 1;
+        let f = fn(x) => a + x;
+        let g = f;
+        let h = f;
+        """,
+        expected_err_substr="已被移动",
+    )
+
 
 # ------------------------------------------------------------------
 # 主入口
@@ -474,6 +577,11 @@ POSITIVE_TESTS = [
     test_nested_if_closure,
     test_no_arg_closure,
     test_vec_with_closure,
+    test_let_move,
+    test_assign_move,
+    test_return_move,
+    test_uncaptured_fn_copyable,
+    test_closure_as_param_move,
 ]
 
 NEGATIVE_TESTS = [
@@ -481,6 +589,7 @@ NEGATIVE_TESTS = [
     test_undefined_var_in_closure,
     test_type_mismatch_hof,
     test_call_non_function,
+    test_use_after_move_should_fail,
 ]
 
 
