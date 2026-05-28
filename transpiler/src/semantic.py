@@ -17,6 +17,7 @@ class SemanticAnalyzer:
         self._predeclared: Dict[str, str] = {}
         self.fn_expr_captures: Dict[int, List[str]] = {}
         self._fn_expr_depth = 0   # fn_expr 嵌套深度
+        self.moved_vars = set()   # 4.14 新增：记录已被移动（move）的闭包变量
 
     def reset(self):
         self.symbol_table = [{}]
@@ -28,6 +29,7 @@ class SemanticAnalyzer:
         self._predeclared = {}
         self.fn_expr_captures.clear()
         self._fn_expr_depth = 0
+        self.moved_vars.clear()
 
     # === 4.14限制 ===
     def _is_closure_var_ref(self, node) -> bool:
@@ -303,14 +305,6 @@ class SemanticAnalyzer:
         expr_node = node[2]        
         expr_type = self.visit_expr(expr_node)
 
-        # === 4.14 临时限制 ===
-        if self._is_closure_var_ref(expr_node):
-            self.errors.append(
-                f"错误: 暂不支持将闭包变量 '{expr_node[1]}' 赋值给其它变量（4.14 待实现）"
-            )
-            return
-        # ====================
-
         if lhs[0] == 'var':
             var_name = lhs[1]
             var_type = self.lookup(var_name)
@@ -319,6 +313,11 @@ class SemanticAnalyzer:
                 return
             if expr_type != var_type:
                 self.errors.append(f"错误: 不能将 {expr_type} 赋值给 {var_type} 类型的变量 '{var_name}'")
+
+            # 4.14：若右侧是闭包变量，标记源变量已被移动
+            if self._is_closure_var_ref(expr_node):
+                src_name = expr_node[1]
+                self.moved_vars.add(src_name)
 
         elif lhs[0] == 'index':
             obj_type = self.visit_expr(lhs[1])
@@ -412,16 +411,13 @@ class SemanticAnalyzer:
         var_name = node[1]
         expr_node = node[2]
 
-        # === 4.14 临时限制 ===
-        if self._is_closure_var_ref(expr_node):
-            self.errors.append(
-                f"错误: 暂不支持将闭包变量 '{expr_node[1]}' 赋值给其他变量（4.14 待实现）"
-            )
-            return
-        # ====================
-
         expr_type = self.visit_expr(expr_node)
         self.declare(var_name, expr_type)
+
+        # 4.14：若右侧是闭包变量，标记源变量已被移动
+        if self._is_closure_var_ref(expr_node):
+            src_name = expr_node[1]
+            self.moved_vars.add(src_name)
 
     # ============ return 语句 ============
     def visit_return(self, node: Tuple):
@@ -433,13 +429,10 @@ class SemanticAnalyzer:
         expr_node = node[1]
         expr_type = self.visit_expr(node[1])
 
-        # === 4.14 临时限制 ===
+        # 4.14：若返回的是闭包变量，标记为已移动
         if self._is_closure_var_ref(expr_node):
-            self.errors.append(
-                f"错误: 暂不支持返回闭包变量 '{expr_node[1]}'，请直接返回闭包字面量（4.14 待实现）"
-            )
-            return
-        # ====================
+            src_name = expr_node[1]
+            self.moved_vars.add(src_name)
         
         # 匿名函数不更新 func_table（因为不在其中）
         if self.current_func == '<anonymous>':
@@ -716,6 +709,12 @@ class SemanticAnalyzer:
 
             if node_type == 'var':
                 name = node[1]
+
+                # 4.14：检查是否已被移动
+                if name in self.moved_vars:
+                    self.errors.append(f"错误: 变量 '{name}' 已被移动，不能再次使用")
+                    return 'unknown'
+
                 t = self.lookup(name)
                 if t is None:
                     # fallback 查命名函数表

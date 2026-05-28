@@ -138,6 +138,76 @@ def test_compiler():
         print(f"错误: {e}")
     print()
 
+    # 测试 7：let 转移
+    print("测试 7 - let 转移:")
+    source7 = """
+    let a = 10;
+    let f = fn(x) => a + x;
+    let g = f;
+    let r = g(5);
+    """
+    # 期望：f.env = NULL; free(f.env) 实际为 free(NULL)，安全
+    # g(5) 正常调用
+    compiler7 = Compiler()
+    try:
+        c_code7 = compiler7.compile(source7)
+        print(c_code7)
+    except Exception as e:
+        print(f"错误: {e}")
+    print()
+    
+    # 测试 8：return 转移
+    print("测试 8 - return 转移:")
+    source8 = """
+    fn make_adder(x) {
+        let f = fn(y) => x + y;
+        return f;
+    }
+    let add5 = make_adder(5);
+    let r = add5(3);
+    """
+    compiler8 = Compiler()
+    try:
+        c_code8 = compiler8.compile(source8)
+        print(c_code8)
+    except Exception as e:
+        print(f"错误: {e}")
+    print()
+    
+    # 测试 9：assign 转移
+    print("测试 9 - assign 转移:")
+    source9 = """
+    let a = 1;
+    let f = fn(x) => a + x;
+    let g = fn(x) => a + a + x;
+    g = f;
+    let r = g(10);
+    """
+    compiler9= Compiler()
+    try:
+        c_code9 = compiler9.compile(source9)
+        print(c_code9)
+    except Exception as e:
+        print(f"错误: {e}")
+    print()
+    
+    # 测试 10：use-after-move 应报错
+    print("测试 10 - use-after-move 语义报错:")
+    sourceX = """
+    let a = 1;
+    let f = fn(x) => a + x;
+    let g = f;
+    let h = f;
+    """
+    # 期望 Semantic 报错：变量 'f' 已被移动，不能再次使用
+    compilerX = Compiler()
+    try:
+        c_codeX = compilerX.compile(sourceX)
+        print(c_codeX)
+    except Exception as e:
+        print(f"错误: {e}")
+    print()
+
 
 def main():
     """命令行接口"""

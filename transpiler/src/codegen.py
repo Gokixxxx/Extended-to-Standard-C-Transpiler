@@ -119,15 +119,17 @@ class CCodeGenerator:
             expr = node[2]
             if self._is_closure_expr(expr):
                 self.closure_vars.add(var_name)
-            expr_type = self._infer_expr_type(expr)
-            if isinstance(expr_type, str) and expr_type.startswith('fn('):
-                parsed = self._parse_fn_type(expr_type)
-                if parsed:
-                    _, ret_type = parsed
-                    if isinstance(ret_type, str) and ret_type.startswith('fn('):
-                        self.func_returns_closure.add(var_name)
-                # 记录 let 变量的 C 返回类型
-                self.let_var_types[var_name] = self._infer_fn_expr_ret_c_type(expr)
+                # 4.14 新增：预扫描阶段就设置 closure_var_types
+                ret_c_type = self._infer_fn_expr_ret_c_type(expr)
+                closure_type = self._closure_type_for(len(expr[1]), ret_c_type)
+                self.closure_var_types[var_name] = closure_type
+            # 4.14 步骤2：右侧是闭包变量时，左侧也继承为闭包变量
+            if isinstance(expr, tuple) and expr[0] == 'var':
+                src_name = expr[1]
+                if src_name in self.closure_vars:
+                    self.closure_vars.add(var_name)
+                    if src_name in self.closure_var_types:
+                        self.closure_var_types[var_name] = self.closure_var_types[src_name]
             self._pre_scan(expr)
         elif op == 'expr_stmt':
             self._pre_scan(node[1])
@@ -391,6 +393,9 @@ class CCodeGenerator:
             return 'int'
         elif op == 'var':
             name = expr[1]
+            # 4.14 步骤2：优先查闭包变量类型
+            if name in self.closure_var_types:
+                return self.closure_var_types[name]
             if name in self.let_var_types:
                 return self.let_var_types[name]
             return 'int'
@@ -602,13 +607,25 @@ class CCodeGenerator:
         if node[0] == 'let_decl':
             return self._gen_let(node)
         elif node[0] == 'return':
+            expr_node = node[1]
             expr_code = self._generate_expr(node[1])
+            move_stmt = ""
+            # 4.14 步骤3：return 转移
+            if isinstance(expr_node, tuple) and expr_node[0] == 'var' and expr_node[1] in self.closure_vars:
+                src_name = expr_node[1]
+                move_stmt = f'{src_name}.env = NULL;\n'
+                # 从作用域栈移除，避免 _exit_scope 生成死代码 free
+                if self.scope_stack:
+                    for scope in self.scope_stack:
+                        if src_name in scope:
+                            scope.remove(src_name)
+                            break
             if '\n' in expr_code:
                 parts = expr_code.split('\n')
                 pre_stmts = parts[:-1]
                 actual_expr = parts[-1]
                 return '\n'.join(pre_stmts + [f'return {actual_expr};'])
-            return f'return {expr_code};'
+            return move_stmt + f'return {expr_code};'
         elif node[0] == 'expr_stmt':
             expr_code = self._generate_expr(node[1])
             return f'{expr_code};'
@@ -708,6 +725,17 @@ class CCodeGenerator:
                 return '\n'.join(lines)
         
         expr_code = self._generate_expr(expr)
+
+        # 4.14 步骤3：let 转移 — 右侧是闭包变量时执行移动
+        move_stmt = ""
+        if isinstance(expr, tuple) and expr[0] == 'var' and expr[1] in self.closure_vars:
+            src_name = expr[1]
+            move_stmt = f'\n{src_name}.env = NULL;'
+            # 继承闭包类型和作用域记录
+            if src_name in self.closure_var_types:
+                c_type = self.closure_var_types[src_name]
+                self.closure_vars.add(var_name)
+                self.closure_var_types[var_name] = c_type
         
         # 处理包含前置语句的表达式（如 call 中的 vec_literal 参数）
         if '\n' in expr_code:
@@ -715,10 +743,10 @@ class CCodeGenerator:
             pre_stmts = parts[:-1]
             actual_expr = parts[-1]
             lines = pre_stmts + [f'{c_type} {var_name} = {actual_expr};']
-            return '\n'.join(lines)
+            return '\n'.join(lines) + move_stmt
         
-        return f'{c_type} {var_name} = {expr_code};'
-
+        return f'{c_type} {var_name} = {expr_code};' + move_stmt
+    
     def _contains_match(self, expr: Any) -> bool:
         if isinstance(expr, tuple):
             if expr[0] == 'match':
@@ -1016,13 +1044,25 @@ class CCodeGenerator:
                 return call_code
             elif expr[0] == 'assign':
                 lhs = expr[1]
-                rhs = self._generate_expr(expr[2], subs)
+                rhs_expr = expr[2]
+                rhs = self._generate_expr(rhs_expr, subs)
+                # 4.14 步骤3：assign 转移
+                rhs_move = ""
+                if isinstance(rhs_expr, tuple) and rhs_expr[0] == 'var' and rhs_expr[1] in self.closure_vars:
+                    src_name = rhs_expr[1]
+                    rhs_move = f'\n{src_name}.env = NULL'
+                
                 if lhs[0] == 'var':
-                    return f"{lhs[1]} = {rhs}"
+                    target = lhs[1]
+                    if target in self.closure_vars:
+                        # 目标已有闭包值，先防泄漏
+                        pre_free = f'free({target}.env);\n'
+                        return pre_free + f"{target} = {rhs};" + rhs_move
+                    return f"{target} = {rhs};" + rhs_move
                 elif lhs[0] == 'index':
                     obj = self._generate_expr(lhs[1], subs)
                     idx = self._generate_expr(lhs[2], subs)
-                    return f"vec_set_i32(&{obj}, {idx}, {rhs})"
+                    return f"vec_set_i32(&{obj}, {idx}, {rhs})" + rhs_move
             elif expr[0] == 'is_some':
                 return f"is_some({self._generate_expr(expr[1], subs)})"
             elif expr[0] == 'is_none':
