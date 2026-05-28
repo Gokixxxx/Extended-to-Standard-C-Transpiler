@@ -98,9 +98,9 @@ int main() {
     Closure_i32_i32 g = f;
     f.env = NULL;
     int r1 = g.fn(g.env, 5);
-    int (*double)(int) = __fn_2;
-    int (*d1)(int) = double;
-    int (*d2)(int) = double;
+    int (*doubled)(int) = __fn_2;
+    int (*d1)(int) = doubled;
+    int (*d2)(int) = doubled;
     int r2 = d1(3);
     int r3 = d2(4);
     Closure_i32_i32 add5 = make_adder(5);
@@ -120,7 +120,9 @@ int main() {
     Closure_i32_i32 __t1 = {NULL, __fn_6_closure};
     int r6 = apply_twice(__t1, 5);
     Closure_i32_i32 (*add)(int) = __fn_7;
-    int r7 = add(3)(4);
+    Closure_i32_i32 __t4 = add(3);
+    int r7 = __t4.fn(__t4.env, 4);
+    free(__t4.env);
     free(f.env);
     free(g.env);
     free(add5.env);

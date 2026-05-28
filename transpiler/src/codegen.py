@@ -352,6 +352,22 @@ class CCodeGenerator:
             # 顶层（不在任何块中），退化为原来的行为
             pass  # 或者保持到全局列表，视情况
 
+    def _infer_fn_expr_ret_semantic_type(self, fn_expr_node):
+        """递归推断 fn_expr 的语义返回类型字符串（i32 或 fn(i32)->...）"""
+        body = fn_expr_node[2]
+        for stmt in body:
+            if stmt[0] == 'return':
+                ret_expr = stmt[1]
+                ret_type = self._infer_expr_type(ret_expr)
+                if isinstance(ret_type, str) and ret_type.startswith('fn('):
+                    # 返回的是另一个 fn_expr，递归推断
+                    inner_params = ret_expr[1]
+                    inner_ret = self._infer_fn_expr_ret_semantic_type(ret_expr)
+                    return f"fn({','.join(['i32'] * len(inner_params))})->{inner_ret}"
+                else:
+                    return 'i32'
+        return 'i32'
+
     # ==================== 类型推断 ====================
     def _infer_func_return_type(self, node: Tuple):
         func_name = node[1]
@@ -436,6 +452,12 @@ class CCodeGenerator:
                     parsed = self._parse_fn_type(fn_type)
                     if parsed:
                         _, ret = parsed
+                        # 如果返回类型是函数类型，返回对应的闭包类型
+                        if isinstance(ret, str) and ret.startswith('fn('):
+                            inner_parsed = self._parse_fn_type(ret)
+                            if inner_parsed:
+                                inner_params, _ = inner_parsed
+                                return self._closure_type(len(inner_params))
                         return self._c_type_from_str(ret)
                 if func_name in self.closure_var_types:
                     closure_type = self.closure_var_types[func_name]
@@ -683,7 +705,8 @@ class CCodeGenerator:
                 param_str = ', '.join(['int'] * len(params)) if params else 'void'
                 self.fn_ptr_targets[var_name] = fn_name
                 # 记录语义类型，供后续变量引用推断（如 let g = doubled）
-                fn_semantic_type = f"fn({','.join(['i32'] * len(params))})->i32"
+                ret_semantic_type = self._infer_fn_expr_ret_semantic_type(expr)
+                fn_semantic_type = f"fn({','.join(['i32'] * len(params))})->{ret_semantic_type}"
                 self.let_var_types[var_name] = fn_semantic_type
                 return f'{ret_c_type} (*{var_name})({param_str}) = {fn_name};'
             else:
@@ -1040,14 +1063,26 @@ class CCodeGenerator:
                     parts = callee_code.split('\n')
                     pre_stmts.extend(parts[:-1])
                     callee_code = parts[-1]
-                # 再为闭包调用链生成临时变量（此时 callee_code 已净化为单行）
-                if is_closure and callee_expr[0] == 'call':
-                    tmp = self._new_temp()
-                    callee_ret_type = self._infer_expr_type(callee_expr)
+                
+                # 判断是否需要临时变量（闭包调用链）
+                callee_ret_type = self._infer_expr_type(callee_expr)
+                needs_temp = (is_closure and callee_expr[0] == 'call')
+                closure_type = None
+                
+                if not needs_temp and callee_expr[0] == 'call':
+                    # callee 是普通函数调用，但返回闭包（如 add(3) 返回 Closure）
                     if isinstance(callee_ret_type, str) and callee_ret_type.startswith('Closure_'):
+                        needs_temp = True
+                        is_closure = True
                         closure_type = callee_ret_type
-                    else:
-                        closure_type = self._closure_type(len(args))
+                
+                if needs_temp:
+                    tmp = self._new_temp()
+                    if closure_type is None:
+                        if isinstance(callee_ret_type, str) and callee_ret_type.startswith('Closure_'):
+                            closure_type = callee_ret_type
+                        else:
+                            closure_type = self._closure_type(len(args))
                     pre_stmts.append(f'{closure_type} {tmp} = {callee_code};')
                     callee_code = tmp
                     # 按作用域选择：函数内 vs main()

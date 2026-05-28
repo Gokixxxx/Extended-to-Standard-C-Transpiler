@@ -3,9 +3,9 @@ let f = fn(x) => a + x;
 let g = f;
 let r1 = g(5);
 
-let double = fn(x) => x * 2;
-let d1 = double;
-let d2 = double;
+let doubled = fn(x) => x * 2;
+let d1 = doubled;
+let d2 = doubled;
 let r2 = d1(3);
 let r3 = d2(4);
 
