@@ -80,6 +80,7 @@ class RustLikeParser(Parser):
     # ==================== 语句 ====================
     @_('LET IDENTIFIER EQ expr SEMI')
     def statement(self, p):
+        print("DEBUG: LET")     # DEBUG
         return ('let_decl', p.IDENTIFIER, p.expr)
     
     @_('RETURN expr SEMI')
@@ -100,6 +101,7 @@ class RustLikeParser(Parser):
     
     @_('FOR IDENTIFIER IN expr LBRACE statements RBRACE')
     def statement(self, p):
+        print("DEBUG: for rule matched with statements")  # DEBUG
         return ('for_in', p.IDENTIFIER, p.expr, p.statements)
     
     @_('WHILE expr LBRACE statements RBRACE')
@@ -294,7 +296,8 @@ class RustLikeParser(Parser):
     # 赋值（最低优先级，右结合）
     @_('postfix EQ expr')
     def expr(self, p):
-        return ('assign', p.postfix, p.expr)
+        print("DEBUG: EQ expr")     # DEBUG
+        return ('assign', p.expr0, p.expr1)
     
     # Match 表达式
     @_('MATCH IDENTIFIER LBRACE match_cases RBRACE')
@@ -393,20 +396,11 @@ if __name__ == '__main__':
     parser = RustLikeParser()
     
     code = '''
-    struct Rectangle {
-        width: i32,
-        height: i32
+    let arr1 = [1, 2, 3];
+    let a = 1;
+    for j in arr1 {
+        a = j;
     }
-
-    impl Rectangle {
-        fn area(&self) {
-            return self.width * self.height;
-        }
-    }
-
-    let rect1 = Rectangle { width: 30, height: 50 };
-    let a = rect1.area();
-    let w = rect1.width;
     '''
     
     print("Parsing code:")

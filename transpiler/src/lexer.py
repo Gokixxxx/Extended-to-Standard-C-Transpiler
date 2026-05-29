@@ -68,24 +68,6 @@ class RustLikeLexer(Lexer):
     @_(r'\bmatch\b')
     def MATCH(self, t):
         return t
-
-    # ===== 5.1 新增 START =====
-    @_(r'\bstruct\b')
-    def STRUCT(self, t):
-        return t
-
-    @_(r'\bimpl\b')
-    def IMPL(self, t):
-        return t
-
-    @_(r'&')
-    def AMPERSAND(self, t):
-        return t
-
-    @_(r':')
-    def COLON(self, t):
-        return t
-    # ===== 5.1 新增 END =====
         
     @_(r'[a-zA-Z_][a-zA-Z0-9_]*')
     def IDENTIFIER(self, t):
@@ -114,6 +96,22 @@ class RustLikeLexer(Lexer):
         
     @_(r'<=')
     def LTE(self, t):
+        return t
+    
+    @_(r'\bstruct\b')
+    def STRUCT(self, t):
+        return t
+
+    @_(r'\bimpl\b')
+    def IMPL(self, t):
+        return t
+
+    @_(r'&')
+    def AMPERSAND(self, t):
+        return t
+
+    @_(r':')
+    def COLON(self, t):
         return t
         
     @_(r'>')
@@ -197,19 +195,14 @@ class RustLikeLexer(Lexer):
 if __name__ == '__main__':
     lexer = RustLikeLexer()
     code ='''
-    struct Rectangle {
-        width: i32,
-        height: i32
+    let arr1 = [1, 2, 3];
+    let sum1 = 0;
+    for j in arr1 {
+        let f2 = fn() => j;
+        let r10 = f2();
+        sum1 = sum1 + r10;
     }
-    
-    impl Rectangle {
-        fn area(&self) {
-            return self.width * self.height;
-        }
-    }
-    
-    let rect = Rectangle { width: 30, height: 50 };
-    let a = rect.area();
+    let r11 = sum1;
     '''
     print("Tokens: ")
     for tok in lexer.tokenize(code):
