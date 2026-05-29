@@ -8,7 +8,7 @@ _: Any
 
 class RustLikeParser(Parser):
     tokens = RustLikeLexer.tokens
-    expect = 11
+    expect = 10
 
     # 优先级声明：从低到高
     precedence = (

@@ -380,19 +380,17 @@ class CCodeGenerator:
             pass  # 或者保持到全局列表，视情况
 
     def _infer_fn_expr_ret_semantic_type(self, fn_expr_node):
-        """递归推断 fn_expr 的语义返回类型字符串（i32 或 fn(i32)->...）"""
         body = fn_expr_node[2]
         for stmt in body:
             if stmt[0] == 'return':
                 ret_expr = stmt[1]
                 ret_type = self._infer_expr_type(ret_expr)
                 if isinstance(ret_type, str) and ret_type.startswith('fn('):
-                    # 返回的是另一个 fn_expr，递归推断
                     inner_params = ret_expr[1]
                     inner_ret = self._infer_fn_expr_ret_semantic_type(ret_expr)
                     return f"fn({','.join(['i32'] * len(inner_params))})->{inner_ret}"
                 else:
-                    return 'i32'
+                    return ret_type
         return 'i32'
 
     def _semantic_type_to_closure_type(self, type_str: str) -> str:
@@ -546,14 +544,13 @@ class CCodeGenerator:
                 ret_expr = stmt[1]
                 ret_type = self._infer_expr_type(ret_expr)
                 if isinstance(ret_type, str) and ret_type.startswith('fn('):
-                    # 返回的是另一个 fn_expr
                     inner_params = ret_expr[1]
                     inner_ret_c_type = self._infer_fn_expr_ret_c_type(ret_expr)
                     return self._closure_type_for(len(inner_params), inner_ret_c_type)
                 elif isinstance(ret_type, str) and ret_type.startswith('Closure_'):
                     return ret_type
                 else:
-                    return 'int'
+                    return self._c_type_from_str(ret_type)
         return 'int'
 
     # ==================== 程序组装 ====================
