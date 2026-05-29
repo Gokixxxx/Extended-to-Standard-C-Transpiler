@@ -8,8 +8,11 @@ _: Any
 
 class RustLikeParser(Parser):
     tokens = RustLikeLexer.tokens
-    expect = 8
 
+    # 调试
+    # debugfile = 'parser.out'
+    
+    # 优先级声明：从低到高
     precedence = (
         ('right', 'EQ'),
         ('right', 'FAT_ARROW'),
@@ -17,7 +20,6 @@ class RustLikeParser(Parser):
         ('left', 'GT', 'LT', 'GTE', 'LTE'),
         ('left', 'PLUS', 'MINUS'),
         ('left', 'TIMES', 'DIVIDE'),
-        ('left', 'LPAREN', 'LBRACKET', 'DOT', 'IS_SOME', 'IS_NONE'),
     )
     
     start = 'program'
@@ -35,6 +37,14 @@ class RustLikeParser(Parser):
     def top_level_list(self, p):
         return p.top_level_list + [p.top_level]
     
+    @_('struct_def')
+    def top_level(self, p):
+        return p.struct_def
+
+    @_('impl_def')
+    def top_level(self, p):
+        return p.impl_def
+    
     @_('func_def')
     def top_level(self, p):
         return p.func_def
@@ -43,30 +53,94 @@ class RustLikeParser(Parser):
     def top_level(self, p):
         return p.statement
     
-    @_('struct_def')
-    def top_level(self, p):
-        return p.struct_def
+    # ==================== Lambda 表达式====================
+    @_('FN IDENTIFIER FAT_ARROW expr')
+    def lambda_expr(self, p):
+        # fn x => expr  等价于  fn(x) { return expr; }
+        return ('fn_expr', [p.IDENTIFIER], [('return', p.expr)])
     
-    @_('impl_def')
-    def top_level(self, p):
-        return p.impl_def
+    @_('FN LPAREN param_list RPAREN FAT_ARROW expr')
+    def lambda_expr(self, p):
+        # fn(x, y) => expr  脱糖为  fn(x, y) { return expr; }
+        return ('fn_expr', p.param_list, [('return', p.expr)])
+
+    @_('FN LPAREN RPAREN FAT_ARROW expr')
+    def lambda_expr(self, p):
+        # fn() => expr  脱糖为  fn() { return expr; }
+        return ('fn_expr', [], [('return', p.expr)])
     
-    # ==================== 函数定义（独立参数列表，与 Lambda 隔离）====================
-    @_('FN IDENTIFIER LPAREN func_params RPAREN LBRACE statements RBRACE')
+    # ==================== 函数定义 ====================
+    @_('FN IDENTIFIER LPAREN param_list RPAREN LBRACE statements RBRACE')
     def func_def(self, p):
-        return ('func_def', p.IDENTIFIER, p.func_params, p.statements)
+        return ('func_def', p.IDENTIFIER, p.param_list, p.statements)
     
     @_('FN IDENTIFIER LPAREN RPAREN LBRACE statements RBRACE')
     def func_def(self, p):
         return ('func_def', p.IDENTIFIER, [], p.statements)
     
     @_('IDENTIFIER')
-    def func_params(self, p):
+    def param_list(self, p):
         return [p.IDENTIFIER]
     
-    @_('func_params COMMA IDENTIFIER')
-    def func_params(self, p):
-        return p.func_params + [p.IDENTIFIER]
+    @_('param_list COMMA IDENTIFIER')
+    def param_list(self, p):
+        return p.param_list + [p.IDENTIFIER]
+    
+    @_('AMPERSAND IDENTIFIER')
+    def param_list(self, p):
+        return [('&', p.IDENTIFIER)]
+
+    @_('param_list COMMA AMPERSAND IDENTIFIER')
+    def param_list(self, p):
+        return p.param_list + [('&', p.IDENTIFIER)]
+    
+    # ===================== Struct ======================
+    @_('STRUCT IDENTIFIER LBRACE field_list RBRACE')
+    def struct_def(self, p):
+        return ('struct_def', p.IDENTIFIER, p.field_list)
+
+    @_('STRUCT IDENTIFIER LBRACE RBRACE')
+    def struct_def(self, p):
+        return ('struct_def', p.IDENTIFIER, [])
+
+    @_('field')
+    def field_list(self, p):
+        return [p.field]
+
+    @_('field_list field')
+    def field_list(self, p):
+        return p.field_list + [p.field]
+
+    @_('IDENTIFIER COLON IDENTIFIER')
+    def field(self, p):
+        return ('field', p.IDENTIFIER, p.IDENTIFIER1)
+    
+    # ===================== Implement ======================
+    @_('IMPL IDENTIFIER LBRACE method_list RBRACE')
+    def impl_def(self, p):
+        return ('impl_def', p.IDENTIFIER, p.method_list)
+
+    @_('IMPL IDENTIFIER LBRACE RBRACE')
+    def impl_def(self, p):
+        return ('impl_def', p.IDENTIFIER, [])
+
+    @_('method_def')
+    def method_list(self, p):
+        return [p.method_def]
+
+    @_('method_list method_def')
+    def method_list(self, p):
+        return p.method_list + [p.method_def]
+
+    # 强制首参数为 &self，无额外参数
+    @_('FN IDENTIFIER LPAREN AMPERSAND IDENTIFIER RPAREN LBRACE statements RBRACE')
+    def method_def(self, p):
+        return ('method_def', p.IDENTIFIER, [('&', p.IDENTIFIER1)], p.statements)
+
+    # 强制首参数为 &self，带额外参数
+    @_('FN IDENTIFIER LPAREN AMPERSAND IDENTIFIER COMMA param_list RPAREN LBRACE statements RBRACE')
+    def method_def(self, p):
+        return ('method_def', p.IDENTIFIER, [('&', p.IDENTIFIER1)] + p.param_list, p.statements)
     
     # ==================== 语句块 ====================
     @_('statement')
@@ -80,7 +154,6 @@ class RustLikeParser(Parser):
     # ==================== 语句 ====================
     @_('LET IDENTIFIER EQ expr SEMI')
     def statement(self, p):
-        print("DEBUG: LET")     # DEBUG
         return ('let_decl', p.IDENTIFIER, p.expr)
     
     @_('RETURN expr SEMI')
@@ -101,133 +174,101 @@ class RustLikeParser(Parser):
     
     @_('FOR IDENTIFIER IN expr LBRACE statements RBRACE')
     def statement(self, p):
-        print("DEBUG: for rule matched with statements")  # DEBUG
         return ('for_in', p.IDENTIFIER, p.expr, p.statements)
     
     @_('WHILE expr LBRACE statements RBRACE')
     def statement(self, p):
         return ('while', p.expr, p.statements)
     
-    # ==================== 表达式层级 ====================
+    # ==================== 表达式 ====================
+    @_('primary EQ expr')
+    def expr(self, p):
+        return ('assign', p.primary, p.expr)
     
-    # --- atom：最基础、无后缀的表达式单元 ---
-    @_('IDENTIFIER')
-    def atom(self, p):
-        return ('var', p.IDENTIFIER)
+    @_('match_expr')
+    def expr(self, p):
+        return p.match_expr
     
-    @_('NUMBER')
-    def atom(self, p):
-        return ('num', int(p.NUMBER))
+    @_('term')
+    def expr(self, p):
+        return p.term
     
-    @_('SOME LPAREN expr RPAREN')
-    def atom(self, p):
-        return ('some', p.expr)
+    @_('expr PLUS term')
+    def expr(self, p):
+        return ('add', p.expr, p.term)
     
-    @_('NONE')
-    def atom(self, p):
-        return ('none',)
+    @_('expr MINUS term')
+    def expr(self, p):
+        return ('sub', p.expr, p.term)
     
-    @_('IDENTIFIER LBRACE field_init_list RBRACE')
-    def atom(self, p):
-        return ('struct_literal', p.IDENTIFIER, p.field_init_list)
+    @_('expr EQEQ term')
+    def expr(self, p):
+        return ('eq', p.expr, p.term)
+    
+    @_('expr NEQ term')
+    def expr(self, p):
+        return ('neq', p.expr, p.term)
+    
+    @_('expr GT term')
+    def expr(self, p):
+        return ('gt', p.expr, p.term)
+    
+    @_('expr LT term')
+    def expr(self, p):
+        return ('lt', p.expr, p.term)
+    
+    @_('expr GTE term')
+    def expr(self, p):
+        return ('gte', p.expr, p.term)
+    
+    @_('expr LTE term')
+    def expr(self, p):
+        return ('lte', p.expr, p.term)
+    
+    @_('term TIMES factor')
+    def term(self, p):
+        return ('mul', p.term, p.factor)
+    
+    @_('term DIVIDE factor')
+    def term(self, p):
+        return ('div', p.term, p.factor)
+    
+    @_('factor')
+    def term(self, p):
+        return p.factor
+    
+    @_('primary')
+    def factor(self, p):
+        return p.primary
+    
+    # 函数调用风格：is_some(x), is_none(x)
+    @_('IS_SOME LPAREN expr RPAREN')
+    def primary(self, p):
+        return ('is_some', p.expr)
 
-    @_('IDENTIFIER LBRACE RBRACE')
-    def atom(self, p):
-        return ('struct_literal', p.IDENTIFIER, [])
+    @_('IS_NONE LPAREN expr RPAREN')
+    def primary(self, p):
+        return ('is_none', p.expr)
+
+    # 属性访问风格：x.is_some, x.is_none
+    @_('primary DOT IS_SOME')
+    def primary(self, p):
+        return ('is_some', p.primary)
+
+    @_('primary DOT IS_NONE')
+    def primary(self, p):
+        return ('is_none', p.primary)
+
     
-    @_('LPAREN expr RPAREN')
-    def atom(self, p):
-        return p.expr
-    
+    # ==================== 数组字面量 ====================
     @_('LBRACKET expr_list RBRACKET')
-    def atom(self, p):
+    def primary(self, p):
         return ('vec_literal', p.expr_list)
     
     @_('LBRACKET RBRACKET')
-    def atom(self, p):
+    def primary(self, p):
         return ('vec_literal', [])
     
-    # --- Lambda / 匿名函数 ---
-    @_('FN IDENTIFIER FAT_ARROW expr')
-    def lambda_or_fn(self, p):
-        return ('fn_expr', [p.IDENTIFIER], [('return', p.expr)])
-    
-    @_('FN LPAREN param_list RPAREN FAT_ARROW expr')
-    def lambda_or_fn(self, p):
-        return ('fn_expr', p.param_list, [('return', p.expr)])
-    
-    @_('FN LPAREN RPAREN FAT_ARROW expr')
-    def lambda_or_fn(self, p):
-        return ('fn_expr', [], [('return', p.expr)])
-    
-    @_('FN LPAREN param_list RPAREN LBRACE statements RBRACE')
-    def lambda_or_fn(self, p):
-        return ('fn_expr', p.param_list, p.statements)
-    
-    @_('FN LPAREN RPAREN LBRACE statements RBRACE')
-    def lambda_or_fn(self, p):
-        return ('fn_expr', [], p.statements)
-    
-    # --- 参数列表（仅用于 Lambda / 匿名函数，与 func_params 隔离）---
-    @_('IDENTIFIER')
-    def param_list(self, p):
-        return [p.IDENTIFIER]
-    
-    @_('param_list COMMA IDENTIFIER')
-    def param_list(self, p):
-        return p.param_list + [p.IDENTIFIER]
-    
-    # --- postfix：atom / lambda + 任意后缀操作 ---
-    @_('atom')
-    def postfix(self, p):
-        return p.atom
-    
-    @_('lambda_or_fn')
-    def postfix(self, p):
-        return p.lambda_or_fn
-    
-    @_('postfix DOT IDENTIFIER')
-    def postfix(self, p):
-        return ('field_access', p.postfix, p.IDENTIFIER)
-    
-    @_('postfix LPAREN arg_list RPAREN')
-    def postfix(self, p):
-        return ('call', p.postfix, p.arg_list)
-    
-    @_('postfix LPAREN RPAREN')
-    def postfix(self, p):
-        return ('call', p.postfix, [])
-    
-    @_('postfix LBRACKET expr RBRACKET')
-    def postfix(self, p):
-        return ('index', p.postfix, p.expr)
-    
-    @_('postfix DOT IDENTIFIER LPAREN arg_list RPAREN')
-    def postfix(self, p):
-        return ('method_call', p.postfix, p.IDENTIFIER, p.arg_list)
-    
-    @_('postfix DOT IDENTIFIER LPAREN RPAREN')
-    def postfix(self, p):
-        return ('method_call', p.postfix, p.IDENTIFIER, [])
-    
-    # is_some / is_none 后缀风格：x.is_some
-    @_('postfix DOT IS_SOME')
-    def postfix(self, p):
-        return ('is_some', p.postfix)
-    
-    @_('postfix DOT IS_NONE')
-    def postfix(self, p):
-        return ('is_none', p.postfix)
-    
-    @_('postfix IS_SOME')
-    def postfix(self, p):
-        return ('is_some', p.postfix)
-
-    @_('postfix IS_NONE')
-    def postfix(self, p):
-        return ('is_none', p.postfix)
-
-    # --- 表达式列表 & 参数列表 ---
     @_('expr')
     def expr_list(self, p):
         return [p.expr]
@@ -235,6 +276,28 @@ class RustLikeParser(Parser):
     @_('expr_list COMMA expr')
     def expr_list(self, p):
         return p.expr_list + [p.expr]
+    
+    # ==================== 索引访问 & 方法调用 ====================
+    @_('primary LBRACKET expr RBRACKET')
+    def primary(self, p):
+        return ('index', p.primary, p.expr)
+    
+    @_('primary DOT IDENTIFIER LPAREN arg_list RPAREN')
+    def primary(self, p):
+        return ('method_call', p.primary, p.IDENTIFIER, p.arg_list)
+    
+    @_('primary DOT IDENTIFIER LPAREN RPAREN')
+    def primary(self, p):
+        return ('method_call', p.primary, p.IDENTIFIER, [])
+    
+    # ==================== 函数调用（作为 primary 的一种）====================
+    @_('primary LPAREN arg_list RPAREN')
+    def primary(self, p):
+        return ('call', p.primary, p.arg_list)
+    
+    @_('primary LPAREN RPAREN')
+    def primary(self, p):
+        return ('call', p.primary, [])
     
     @_('expr')
     def arg_list(self, p):
@@ -244,76 +307,11 @@ class RustLikeParser(Parser):
     def arg_list(self, p):
         return p.arg_list + [p.expr]
     
-    # --- expr：顶层表达式（precedence 处理优先级）---
-    
-    # 默认规则：expr 可以是 postfix（最低优先级入口）
-    @_('postfix')
-    def expr(self, p):
-        return p.postfix
-    
-    # 算术运算：右操作数改为 expr，让 precedence 处理优先级
-    @_('expr PLUS expr')
-    def expr(self, p):
-        return ('add', p.expr0, p.expr1)
-    
-    @_('expr MINUS expr')
-    def expr(self, p):
-        return ('sub', p.expr0, p.expr1)
-    
-    @_('expr TIMES expr')
-    def expr(self, p):
-        return ('mul', p.expr0, p.expr1)
-    
-    @_('expr DIVIDE expr')
-    def expr(self, p):
-        return ('div', p.expr0, p.expr1)
-    
-    # 比较运算
-    @_('expr EQEQ expr')
-    def expr(self, p):
-        return ('eq', p.expr0, p.expr1)
-    
-    @_('expr NEQ expr')
-    def expr(self, p):
-        return ('neq', p.expr0, p.expr1)
-    
-    @_('expr GT expr')
-    def expr(self, p):
-        return ('gt', p.expr0, p.expr1)
-    
-    @_('expr LT expr')
-    def expr(self, p):
-        return ('lt', p.expr0, p.expr1)
-    
-    @_('expr GTE expr')
-    def expr(self, p):
-        return ('gte', p.expr0, p.expr1)
-    
-    @_('expr LTE expr')
-    def expr(self, p):
-        return ('lte', p.expr0, p.expr1)
-    
-    # 赋值（最低优先级，右结合）
-    @_('postfix EQ expr')
-    def expr(self, p):
-        print("DEBUG: EQ expr")     # DEBUG
-        return ('assign', p.expr0, p.expr1)
-    
-    # Match 表达式
+    # ==================== Match 表达式 ====================
     @_('MATCH IDENTIFIER LBRACE match_cases RBRACE')
-    def expr(self, p):
+    def match_expr(self, p):
         return ('match', p.IDENTIFIER, p.match_cases)
     
-    # is_some / is_none 前缀风格：is_some(x)
-    @_('IS_SOME LPAREN expr RPAREN')
-    def expr(self, p):
-        return ('is_some', p.expr)
-    
-    @_('IS_NONE LPAREN expr RPAREN')
-    def expr(self, p):
-        return ('is_none', p.expr)
-    
-    # ==================== Match 分支 ====================
     @_('match_case')
     def match_cases(self, p):
         return [p.match_case]
@@ -330,77 +328,61 @@ class RustLikeParser(Parser):
     def match_case(self, p):
         return ('none_case', p.expr)
     
-    # ===== struct_def / field_list / field 规则 =====
-    @_('STRUCT IDENTIFIER LBRACE field_list RBRACE')
-    def struct_def(self, p):
-        return ('struct_def', p.IDENTIFIER, p.field_list)
-
-    @_('STRUCT IDENTIFIER LBRACE RBRACE')
-    def struct_def(self, p):
-        return ('struct_def', p.IDENTIFIER, [])
-
-    @_('field')
-    def field_list(self, p):
-        return [p.field]
-
-    @_('field_list COMMA field')
-    def field_list(self, p):
-        return p.field_list + [p.field]
-
-    @_('IDENTIFIER COLON IDENTIFIER')
-    def field(self, p):
-        return ('field', p.IDENTIFIER0, p.IDENTIFIER1)
-
-    # ===== impl_def / method_list / method_def / self_param 规则 =====
-    @_('IMPL IDENTIFIER LBRACE method_list RBRACE')
-    def impl_def(self, p):
-        return ('impl_def', p.IDENTIFIER, p.method_list)
-
-    @_('method_def')
-    def method_list(self, p):
-        return [p.method_def]
-
-    @_('method_list method_def')
-    def method_list(self, p):
-        return p.method_list + [p.method_def]
-
-    @_('FN IDENTIFIER LPAREN self_param RPAREN LBRACE statements RBRACE')
-    def method_def(self, p):
-        return ('method_def', p.IDENTIFIER, [p.self_param], p.statements)
-
-    @_('FN IDENTIFIER LPAREN self_param COMMA func_params RPAREN LBRACE statements RBRACE')
-    def method_def(self, p):
-        return ('method_def', p.IDENTIFIER, [p.self_param] + p.func_params, p.statements)
-
-    @_('AMPERSAND IDENTIFIER')
-    def self_param(self, p):
-        return ('&', p.IDENTIFIER)
+    # ==================== 基本表达式 ====================
+    @_('IDENTIFIER')
+    def primary(self, p):
+        return ('var', p.IDENTIFIER)
     
+    @_('NUMBER')
+    def primary(self, p):
+        return ('num', int(p.NUMBER))
+    
+    @_('SOME LPAREN expr RPAREN')
+    def primary(self, p):
+        return ('some', p.expr)
+    
+    @_('NONE')
+    def primary(self, p):
+        return ('none',)
+    
+    @_('LPAREN expr RPAREN')
+    def primary(self, p):
+        return p.expr
+    
+    # Lambda 归入 primary
+    @_('lambda_expr')
+    def primary(self, p):
+        return p.lambda_expr
+    
+    # ==================== 类型测试 ====================
+    @_('expr IS_SOME')
+    def expr(self, p):
+        return ('is_some', p.expr)
+    
+    @_('expr IS_NONE')
+    def expr(self, p):
+        return ('is_none', p.expr)
+    
+    # ==================== 匿名函数表达式 ====================
+    @_('FN LPAREN param_list RPAREN LBRACE statements RBRACE')
+    def primary(self, p):
+        return ('fn_expr', p.param_list, p.statements)
 
-    # ===== field_init_list / field_init 规则=====
-    @_('field_init')
-    def field_init_list(self, p):
-        return [p.field_init]
-
-    @_('field_init_list COMMA field_init')
-    def field_init_list(self, p):
-        return p.field_init_list + [p.field_init]
-
-    @_('IDENTIFIER COLON expr')
-    def field_init(self, p):
-        return ('field_init', p.IDENTIFIER, p.expr)
+    @_('FN LPAREN RPAREN LBRACE statements RBRACE')
+    def primary(self, p):
+        return ('fn_expr', [], p.statements)
 
 if __name__ == '__main__':
-    from transpiler.src.lexer import RustLikeLexer
     lexer = RustLikeLexer()
     parser = RustLikeParser()
     
-    code = '''
-    let arr1 = [1, 2, 3];
-    let a = 1;
-    for j in arr1 {
-        a = j;
+    code ='''
+    let vec = [1, 2, 3];
+    let a = 0;
+    for i in vec {
+        a = a + i;
     }
+    let s = a;
     '''
     
     print("Parsing code:")
