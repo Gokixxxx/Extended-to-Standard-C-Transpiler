@@ -8,12 +8,14 @@ _: Any
 class RustLikeLexer(Lexer):
     tokens = {'LET', 'FN', 'RETURN', 'IF', 'ELSE', 'FOR', 'IN', 'WHILE',
               'SOME', 'NONE', 'IS_SOME', 'IS_NONE', 'MATCH',
+              'STRUCT', 'IMPL',
               'IDENTIFIER', 'NUMBER',
               'EQ', 'PLUS', 'MINUS', 'TIMES', 'DIVIDE',
               'EQEQ', 'NEQ', 'GT', 'LT', 'GTE', 'LTE',
               'LPAREN', 'RPAREN', 'LBRACE', 'RBRACE',
               'LBRACKET', 'RBRACKET', 'DOT',
-              'SEMI', 'COMMA', 'FAT_ARROW'}
+              'SEMI', 'COMMA', 'FAT_ARROW',
+              'AMPERSAND', 'COLON'}
     
     @_(r'\blet\b')
     def LET(self, t):
@@ -66,6 +68,24 @@ class RustLikeLexer(Lexer):
     @_(r'\bmatch\b')
     def MATCH(self, t):
         return t
+
+    # ===== 5.1 新增 START =====
+    @_(r'\bstruct\b')
+    def STRUCT(self, t):
+        return t
+
+    @_(r'\bimpl\b')
+    def IMPL(self, t):
+        return t
+
+    @_(r'&')
+    def AMPERSAND(self, t):
+        return t
+
+    @_(r':')
+    def COLON(self, t):
+        return t
+    # ===== 5.1 新增 END =====
         
     @_(r'[a-zA-Z_][a-zA-Z0-9_]*')
     def IDENTIFIER(self, t):
@@ -177,18 +197,20 @@ class RustLikeLexer(Lexer):
 if __name__ == '__main__':
     lexer = RustLikeLexer()
     code ='''
-    if x > 0 {
-        return 1;
-    } else {
-        return 0;
+    struct Rectangle {
+        width: i32,
+        height: i32
     }
-    for x in arr {
-        print(x);
+    
+    impl Rectangle {
+        fn area(&self) {
+            return self.width * self.height;
+        }
     }
-    while i < 10 {
-        i = i + 1;
-    }
+    
+    let rect = Rectangle { width: 30, height: 50 };
+    let a = rect.area();
     '''
     print("Tokens: ")
     for tok in lexer.tokenize(code):
-        print(f"  {tok.type:10} {repr(tok.value):12} (line: {tok.lineno})")
+        print(f"  {tok.type:12} {repr(tok.value):12} (line: {tok.lineno})")
