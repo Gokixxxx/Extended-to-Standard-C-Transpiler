@@ -55,7 +55,7 @@ def test_compiler():
         }
     }
 
-    let rect = Rectangle { width: 30, height: 50 };
+    let rect = new Rectangle { width: 30, height: 50 };
     let a = rect.area();
     """
     compiler12 = Compiler()

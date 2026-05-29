@@ -8,10 +8,8 @@ _: Any
 
 class RustLikeParser(Parser):
     tokens = RustLikeLexer.tokens
+    expect = 11
 
-    # 调试
-    # debugfile = 'parser.out'
-    
     # 优先级声明：从低到高
     precedence = (
         ('right', 'EQ'),
@@ -107,13 +105,13 @@ class RustLikeParser(Parser):
     def field_list(self, p):
         return [p.field]
 
-    @_('field_list field')
+    @_('field_list COMMA field')
     def field_list(self, p):
         return p.field_list + [p.field]
 
-    @_('IDENTIFIER COLON IDENTIFIER')
+    @_('IDENTIFIER COLON I32')
     def field(self, p):
-        return ('field', p.IDENTIFIER, p.IDENTIFIER1)
+        return ('field', p.IDENTIFIER, 'i32')
     
     # ===================== Implement ======================
     @_('IMPL IDENTIFIER LBRACE method_list RBRACE')
@@ -131,16 +129,20 @@ class RustLikeParser(Parser):
     @_('method_list method_def')
     def method_list(self, p):
         return p.method_list + [p.method_def]
+    
+    @_('SELF')
+    def primary(self, p):
+        return ('var', 'self')
 
     # 强制首参数为 &self，无额外参数
-    @_('FN IDENTIFIER LPAREN AMPERSAND IDENTIFIER RPAREN LBRACE statements RBRACE')
+    @_('FN IDENTIFIER LPAREN AMPERSAND SELF RPAREN LBRACE statements RBRACE')
     def method_def(self, p):
-        return ('method_def', p.IDENTIFIER, [('&', p.IDENTIFIER1)], p.statements)
+        return ('method_def', p.IDENTIFIER, [('&', 'self')], p.statements)
 
     # 强制首参数为 &self，带额外参数
-    @_('FN IDENTIFIER LPAREN AMPERSAND IDENTIFIER COMMA param_list RPAREN LBRACE statements RBRACE')
+    @_('FN IDENTIFIER LPAREN AMPERSAND SELF COMMA param_list RPAREN LBRACE statements RBRACE')
     def method_def(self, p):
-        return ('method_def', p.IDENTIFIER, [('&', p.IDENTIFIER1)] + p.param_list, p.statements)
+        return ('method_def', p.IDENTIFIER, [('&', 'self')] + p.param_list, p.statements)
     
     # ==================== 语句块 ====================
     @_('statement')
@@ -258,7 +260,32 @@ class RustLikeParser(Parser):
     @_('primary DOT IS_NONE')
     def primary(self, p):
         return ('is_none', p.primary)
+    
+    # ==================== struct 字面量（new 语法） ====================
+    @_('NEW IDENTIFIER LBRACE field_init_list RBRACE')
+    def primary(self, p):
+        return ('struct_literal', p.IDENTIFIER, p.field_init_list)
 
+    @_('NEW IDENTIFIER LBRACE RBRACE')
+    def primary(self, p):
+        return ('struct_literal', p.IDENTIFIER, [])
+    
+    @_('IDENTIFIER COLON expr')
+    def field_init(self, p):
+        return ('field_init', p.IDENTIFIER, p.expr)
+
+    @_('field_init')
+    def field_init_list(self, p):
+        return [p.field_init]
+
+    @_('field_init_list COMMA field_init')
+    def field_init_list(self, p):
+        return p.field_init_list + [p.field_init]
+    
+    # ==================== 字段访问 ====================
+    @_('primary DOT IDENTIFIER')
+    def primary(self, p):
+        return ('field_access', p.primary, p.IDENTIFIER)
     
     # ==================== 数组字面量 ====================
     @_('LBRACKET expr_list RBRACKET')
@@ -377,12 +404,19 @@ if __name__ == '__main__':
     parser = RustLikeParser()
     
     code ='''
-    let vec = [1, 2, 3];
-    let a = 0;
-    for i in vec {
-        a = a + i;
+    struct Rectangle {
+        width: i32,
+        height: i32
     }
-    let s = a;
+
+    impl Rectangle {
+        fn area(&self) {
+            return self.width * self.height;
+        }
+    }
+
+    let rect = new Rectangle { width: 30, height: 50 };
+    let a = rect.area();
     '''
     
     print("Parsing code:")

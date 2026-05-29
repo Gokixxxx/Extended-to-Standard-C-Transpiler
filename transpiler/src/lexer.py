@@ -8,7 +8,7 @@ _: Any
 class RustLikeLexer(Lexer):
     tokens = {'LET', 'FN', 'RETURN', 'IF', 'ELSE', 'FOR', 'IN', 'WHILE',
               'SOME', 'NONE', 'IS_SOME', 'IS_NONE', 'MATCH',
-              'STRUCT', 'IMPL',
+              'STRUCT', 'IMPL', 'NEW', 'I32', 'SELF',
               'IDENTIFIER', 'NUMBER',
               'EQ', 'PLUS', 'MINUS', 'TIMES', 'DIVIDE',
               'EQEQ', 'NEQ', 'GT', 'LT', 'GTE', 'LTE',
@@ -48,6 +48,18 @@ class RustLikeLexer(Lexer):
     @_(r'\bwhile\b')
     def WHILE(self, t):
         return t
+    
+    @_(r'\bnew\b')
+    def NEW(self, t):
+        return t
+    
+    @_(r'\bstruct\b')
+    def STRUCT(self, t):
+        return t
+
+    @_(r'\bimpl\b')
+    def IMPL(self, t):
+        return t
         
     @_(r'\bSome\b')
     def SOME(self, t):
@@ -55,6 +67,14 @@ class RustLikeLexer(Lexer):
         
     @_(r'\bNone\b')
     def NONE(self, t):
+        return t
+    
+    @_(r'\bi32\b')
+    def I32(self, t):
+        return t
+    
+    @_(r'\bself\b')
+    def SELF(self, t):
         return t
         
     @_(r'\bis_some\b')
@@ -96,14 +116,6 @@ class RustLikeLexer(Lexer):
         
     @_(r'<=')
     def LTE(self, t):
-        return t
-    
-    @_(r'\bstruct\b')
-    def STRUCT(self, t):
-        return t
-
-    @_(r'\bimpl\b')
-    def IMPL(self, t):
         return t
 
     @_(r'&')
@@ -195,14 +207,7 @@ class RustLikeLexer(Lexer):
 if __name__ == '__main__':
     lexer = RustLikeLexer()
     code ='''
-    let arr1 = [1, 2, 3];
-    let sum1 = 0;
-    for j in arr1 {
-        let f2 = fn() => j;
-        let r10 = f2();
-        sum1 = sum1 + r10;
-    }
-    let r11 = sum1;
+    fn area(&self) { return self.width * self.height; }
     '''
     print("Tokens: ")
     for tok in lexer.tokenize(code):
