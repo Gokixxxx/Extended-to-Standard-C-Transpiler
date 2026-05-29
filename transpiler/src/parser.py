@@ -1,5 +1,5 @@
 """
-语法分析器（重构版 — 消除 shift/reduce 冲突）
+语法分析器
 """
 from sly import Parser
 from transpiler.src.lexer import RustLikeLexer
@@ -106,7 +106,7 @@ class RustLikeParser(Parser):
     def statement(self, p):
         return ('while', p.expr, p.statements)
     
-    # ==================== 表达式层级重构 ====================
+    # ==================== 表达式层级 ====================
     
     # --- atom：最基础、无后缀的表达式单元 ---
     @_('IDENTIFIER')
@@ -145,7 +145,7 @@ class RustLikeParser(Parser):
     def atom(self, p):
         return ('vec_literal', [])
     
-    # --- Lambda / 匿名函数（直接作为 postfix 的一种）---
+    # --- Lambda / 匿名函数 ---
     @_('FN IDENTIFIER FAT_ARROW expr')
     def lambda_or_fn(self, p):
         return ('fn_expr', [p.IDENTIFIER], [('return', p.expr)])
@@ -242,50 +242,54 @@ class RustLikeParser(Parser):
     def arg_list(self, p):
         return p.arg_list + [p.expr]
     
-    # --- expr：中缀运算（左递归）---
+    # --- expr：顶层表达式（precedence 处理优先级）---
+    
+    # 默认规则：expr 可以是 postfix（最低优先级入口）
     @_('postfix')
     def expr(self, p):
         return p.postfix
     
-    @_('expr PLUS postfix')
+    # 算术运算：右操作数改为 expr，让 precedence 处理优先级
+    @_('expr PLUS expr')
     def expr(self, p):
-        return ('add', p.expr, p.postfix)
+        return ('add', p.expr0, p.expr1)
     
-    @_('expr MINUS postfix')
+    @_('expr MINUS expr')
     def expr(self, p):
-        return ('sub', p.expr, p.postfix)
+        return ('sub', p.expr0, p.expr1)
     
-    @_('expr TIMES postfix')
+    @_('expr TIMES expr')
     def expr(self, p):
-        return ('mul', p.expr, p.postfix)
+        return ('mul', p.expr0, p.expr1)
     
-    @_('expr DIVIDE postfix')
+    @_('expr DIVIDE expr')
     def expr(self, p):
-        return ('div', p.expr, p.postfix)
+        return ('div', p.expr0, p.expr1)
     
-    @_('expr EQEQ postfix')
+    # 比较运算
+    @_('expr EQEQ expr')
     def expr(self, p):
-        return ('eq', p.expr, p.postfix)
+        return ('eq', p.expr0, p.expr1)
     
-    @_('expr NEQ postfix')
+    @_('expr NEQ expr')
     def expr(self, p):
-        return ('neq', p.expr, p.postfix)
+        return ('neq', p.expr0, p.expr1)
     
-    @_('expr GT postfix')
+    @_('expr GT expr')
     def expr(self, p):
-        return ('gt', p.expr, p.postfix)
+        return ('gt', p.expr0, p.expr1)
     
-    @_('expr LT postfix')
+    @_('expr LT expr')
     def expr(self, p):
-        return ('lt', p.expr, p.postfix)
+        return ('lt', p.expr0, p.expr1)
     
-    @_('expr GTE postfix')
+    @_('expr GTE expr')
     def expr(self, p):
-        return ('gte', p.expr, p.postfix)
+        return ('gte', p.expr0, p.expr1)
     
-    @_('expr LTE postfix')
+    @_('expr LTE expr')
     def expr(self, p):
-        return ('lte', p.expr, p.postfix)
+        return ('lte', p.expr0, p.expr1)
     
     # 赋值（最低优先级，右结合）
     @_('postfix EQ expr')
