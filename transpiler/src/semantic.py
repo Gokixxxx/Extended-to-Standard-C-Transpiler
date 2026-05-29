@@ -347,16 +347,31 @@ class SemanticAnalyzer:
         if cond_type != 'bool':
             self.errors.append(f"错误: if 条件必须是 bool，但得到 {cond_type}")
         
+        # === 分支敏感分析：保存 moved_vars 快照 ===
+        saved_moved = set(self.moved_vars)
+        
+        # then 分支（基于快照独立分析）
         self.enter_scope()
         for stmt in then_stmts:
             self.visit(stmt)
         self.exit_scope()
+        then_moved = self.moved_vars - saved_moved   # then 分支新增的 moved
         
+        # 恢复快照，准备分析 else
+        self.moved_vars = set(saved_moved)
+        
+        # else 分支（基于快照独立分析）
+        else_moved = set()
         if else_stmts:
             self.enter_scope()
             for stmt in else_stmts:
                 self.visit(stmt)
             self.exit_scope()
+            else_moved = self.moved_vars - saved_moved   # else 分支新增的 moved
+        
+        # 合并：取并集（保守策略）
+        # 只要变量在任一新增路径中被移动，合并后就视为已移动
+        self.moved_vars = saved_moved.union(then_moved).union(else_moved)
 
     # ============ for_in ============
     def visit_for_in(self, node: Tuple):
