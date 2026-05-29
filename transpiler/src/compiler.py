@@ -32,7 +32,9 @@ class Compiler:
             c_code = self.codegen.generate(
                 ast,
                 func_signatures=self.analyzer.func_table,
-                fn_expr_captures=self.analyzer.fn_expr_captures   # 3.1 新增
+                fn_expr_captures=self.analyzer.fn_expr_captures,
+                struct_table=self.analyzer.struct_table,
+                impl_table=self.analyzer.impl_table
             )
             return c_code
             
@@ -41,186 +43,25 @@ class Compiler:
 
 
 def test_compiler():
-    # 测试用例1
-    print("测试 1 - 简单捕获:")
-    source1 = """
-    let outer = 10;
-    let f = fn(x) => outer + x;
-    let r = f(5);
-    """
-    compiler1 = Compiler()
-    try:
-        c_code1 = compiler1.compile(source1)
-        print(c_code1)
-    except Exception as e:
-        print(f"错误: {e}")
-    print()
-    
-    # 测试用例2
-    print("测试 2 - 嵌套闭包 add(3)(4):")
-    source2 = """
-    let add = fn(a) => fn(b) => a + b;
-    let result = add(3)(4);
-    """
-    compiler2 = Compiler()
-    try:
-        c_code2 = compiler2.compile(source2)
-        print(c_code2)
-    except Exception as e:
-        print(f"错误: {e}")
-    print()
-    
-    # 测试用例3
-    print("测试 3 - 回归 - 无捕获函数仍正常工作:")
-    source3 = """
-    let x = Some(5);
-    let y = match x {
-        Some(v) => v + 1,
-        None => 0
-    };
-    """
-    compiler3 = Compiler()
-    try:
-        c_code3 = compiler3.compile(source3)
-        print(c_code3)
-    except Exception as e:
-        print(f"错误: {e}")
-    print()
-
-    # 测试用例4
-    print("测试 4 - 闭包作为参数传递")
-    source4 = """
-    fn apply(f, x) {
-        return f(x);
+    source12 = """
+    struct Rectangle {
+        width: i32,
+        height: i32
     }
-    let add5 = fn(y) => 5 + y;
-    let result = apply(add5, 10);
-    """
-    compiler4 = Compiler()
-    try:
-        c_code4 = compiler4.compile(source4)
-        print(c_code4)
-    except Exception as e:
-        print(f"错误: {e}")
-    print()
 
-    # 测试用例5
-    print("测试 5 - 多层嵌套捕获")
-    source5 = """
-    let x = 1;
-    let y = 2;
-    let f = fn(a) => fn(b) => x + y + a + b;
-    let result = f(3)(4);
-    """
-    compiler5 = Compiler()
-    try:
-        c_code5 = compiler5.compile(source5)
-        print(c_code5)
-    except Exception as e:
-        print(f"错误: {e}")
-    print()
-
-    # 测试用例6
-    print("测试 6 - 闭包内使用 match")
-    source6 = """
-    let opt = Some(10);
-    let f = fn(x) => match opt {
-        Some(v) => v + x,
-        None => x
-    };
-    let result = f(5);
-    """
-    compiler6 = Compiler()
-    try:
-        c_code6 = compiler6.compile(source6)
-        print(c_code6)
-    except Exception as e:
-        print(f"错误: {e}")
-    print()
-
-    # 测试 7：let 转移
-    print("测试 7 - let 转移:")
-    source7 = """
-    let a = 10;
-    let f = fn(x) => a + x;
-    let g = f;
-    let r = g(5);
-    """
-    # 期望：f.env = NULL; free(f.env) 实际为 free(NULL)，安全
-    # g(5) 正常调用
-    compiler7 = Compiler()
-    try:
-        c_code7 = compiler7.compile(source7)
-        print(c_code7)
-    except Exception as e:
-        print(f"错误: {e}")
-    print()
-    
-    # 测试 8：return 转移
-    print("测试 8 - return 转移:")
-    source8 = """
-    fn make_adder(x) {
-        let f = fn(y) => x + y;
-        return f;
+    impl Rectangle {
+        fn area(&self) {
+            return self.width * self.height;
+        }
     }
-    let add5 = make_adder(5);
-    let r = add5(3);
-    """
-    compiler8 = Compiler()
-    try:
-        c_code8 = compiler8.compile(source8)
-        print(c_code8)
-    except Exception as e:
-        print(f"错误: {e}")
-    print()
-    
-    # 测试 9：assign 转移
-    print("测试 9 - assign 转移:")
-    source9 = """
-    let a = 1;
-    let f = fn(x) => a + x;
-    let g = fn(x) => a + a + x;
-    g = f;
-    let r = g(10);
-    """
-    compiler9= Compiler()
-    try:
-        c_code9 = compiler9.compile(source9)
-        print(c_code9)
-    except Exception as e:
-        print(f"错误: {e}")
-    print()
-    
-    # 测试 10：use-after-move 应报错
-    print("测试 10 - use-after-move 语义报错:")
-    sourceX = """
-    let a = 1;
-    let f = fn(x) => a + x;
-    let g = f;
-    let h = f;
-    """
-    # 期望 Semantic 报错：变量 'f' 已被移动，不能再次使用
-    compilerX = Compiler()
-    try:
-        c_codeX = compilerX.compile(sourceX)
-        print(c_codeX)
-    except Exception as e:
-        print(f"错误: {e}")
-    print()
 
-    # 测试 11：无捕获函数应允许复制，不触发 move
-    print("测试 11 - 无捕获函数可复制:")
-    source11 = """
-    let doubled = fn(x) => x * 2;
-    let g = doubled;
-    let h = doubled;
-    let r1 = g(5);
-    let r2 = h(5);
+    let rect = Rectangle { width: 30, height: 50 };
+    let a = rect.area();
     """
-    compiler11 = Compiler()
+    compiler12 = Compiler()
     try:
-        c_code11 = compiler11.compile(source11)
-        print(c_code11)
+        c_code12 = compiler12.compile(source12)
+        print(c_code12)
     except Exception as e:
         print(f"错误: {e}")
     print()

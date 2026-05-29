@@ -1,10 +1,74 @@
-let a = 10;
-let f = fn(x) => a + x;
-let g = f;
-let r1 = g(5);
-
-fn apply_twice(f, x) {
-    return f(f(x));
+struct Point {
+    x: i32,
+    y: i32
 }
-let add3 = fn(x) => x + 3;
-let r6 = apply_twice(add3, 5);
+
+struct Rectangle {
+    width: i32,
+    height: i32
+}
+
+impl Point {
+    fn distance_from_origin(&self) {
+        return self.x * self.x + self.y * self.y;
+    }
+}
+
+impl Rectangle {
+    fn area(&self) {
+        return self.width * self.height;
+    }
+    
+    fn perimeter(&self) {
+        return 2 * (self.width + self.height);
+    }
+    
+    fn scale(&self, factor) {
+        return self.width * factor;
+    }
+}
+
+let p = Point { x: 3, y: 4 };
+let d = p.distance_from_origin();
+
+let rect = Rectangle { width: 10, height: 20 };
+let a = rect.area();
+let perim = rect.perimeter();
+let scaled = rect.scale(3);
+
+let w = rect.width;
+let h = rect.height;
+
+struct Container {
+    val: i32
+}
+
+impl Container {
+    fn get_val(&self) {
+        return self.val;
+    }
+}
+
+let c = Container { val: 10 };
+let opt = Some(c.get_val());
+let result = match opt {
+    Some(x) => x * 2,
+    None => 0
+};
+
+struct Counter {
+    start: i32
+}
+
+impl Counter {
+    fn make_adder(&self) {
+        let s = self.start;
+        return fn(x) {
+            return s + x;
+        };
+    }
+}
+
+let counter = Counter { start: 5 };
+let adder = counter.make_adder();
+let final = adder(10);

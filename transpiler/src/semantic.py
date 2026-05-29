@@ -118,12 +118,23 @@ class SemanticAnalyzer:
                         if method_name in self.impl_table[struct_name]:
                             self.errors.append(f"错误: struct '{struct_name}' 的方法 '{method_name}' 重复定义")
                             continue
+                        
+                        # === 新增：临时注入 self，供 _quick_infer_type 查询字段类型 ===
+                        if params and isinstance(params[0], tuple) and params[0][0] == '&':
+                            self._predeclared[params[0][1]] = f'&{struct_name}'
+                        
                         # 推断返回类型：扫描 body 中的 return 语句
                         ret_type = 'void'
                         for stmt in body:
                             if isinstance(stmt, tuple) and stmt[0] == 'return':
                                 ret_type = self._quick_infer_type(stmt[1])
                                 break
+                        
+                        # 清理临时注入，避免污染后续分析
+                        if params and isinstance(params[0], tuple) and params[0][0] == '&':
+                            self._predeclared.pop(params[0][1], None)
+                        # === 新增结束 ===
+                        
                         # 参数类型：&self → '&{struct_name}'，其余 → 'i32'
                         param_types = []
                         for p in params:
@@ -291,6 +302,15 @@ class SemanticAnalyzer:
             if node[2] in ('len', 'pop'):
                 return 'i32'
             return 'void'
+        elif op == 'field_access':
+            obj_type = self._quick_infer_type(node[1])
+            field_name = node[2]
+            base_type = obj_type[1:] if isinstance(obj_type, str) and obj_type.startswith('&') else obj_type
+            if base_type in self.struct_table:
+                declared_fields = self.struct_table[base_type]
+                declared_dict = {name: typ for name, typ in declared_fields}
+                return declared_dict.get(field_name, 'unknown')
+            return 'unknown'
         elif op == 'fn_expr':
             params = node[1]
             body = node[2]
@@ -317,8 +337,8 @@ class SemanticAnalyzer:
                 self._analyze_func_body(node)
 
             elif node_type == 'impl_def':
-                # impl 块在预扫描时已处理，visit 阶段跳过
-                pass
+                for method in node[2]:  # node[2] 是 method_list
+                    self.visit(method)
 
             elif node_type == 'method_def':
                 self._analyze_method_body(node)
@@ -571,6 +591,10 @@ class SemanticAnalyzer:
         if self.current_func == '<anonymous>':
             return
         
+        # 方法不在 func_table 中，跳过返回类型一致性检查
+        if self.current_func not in self.func_table:
+            return
+        
         # 补全当前函数参数中 fn_unknown 的返回类型
         if isinstance(node[1], tuple) and node[1][0] == 'call':
             callee_node = node[1][1]
@@ -578,7 +602,6 @@ class SemanticAnalyzer:
                 callee_name = callee_node[1]
                 callee_type = self.lookup(callee_name)
                 if isinstance(callee_type, str) and callee_type.startswith('fn(') and '->unknown' in callee_type:
-                    # 提取参数部分
                     arrow_idx = callee_type.find(')->')
                     params_part = callee_type[3:arrow_idx]
                     new_type = f"fn({params_part})->{expr_type}"

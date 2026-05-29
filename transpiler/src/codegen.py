@@ -2,7 +2,7 @@
 C代码生成器
 """
 
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, Dict
 
 class CCodeGenerator:
     def __init__(self):
@@ -33,8 +33,11 @@ class CCodeGenerator:
         self.scope_temp_closures = []       # 每个作用域的临时闭包列表，与 scope_stack 同步
         self.closure_var_types = {}         # 闭包变量名 -> C 类型
         self.fn_ptr_targets = {}            # 变量名 -> 提升函数名，用于闭包包装时查找适配器
+        self.struct_table: Dict[str, List[Tuple[str, str]]] = {}
+        self.impl_table: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        self.param_types: Dict[str, str] = {}   # 参数名 → 语义类型
 
-    def generate(self, ast: Tuple, func_signatures: dict = None, fn_expr_captures: dict = None) -> str:
+    def generate(self, ast: Tuple, func_signatures: dict = None, fn_expr_captures: dict = None, struct_table: dict = None, impl_table=None) -> str:
         self.includes.clear()
         self.func_defs.clear()
         self.main_stmts.clear()
@@ -48,6 +51,8 @@ class CCodeGenerator:
         self.fn_expr_captures = fn_expr_captures or {}
         self.closure_var_types = {}
         self.fn_ptr_targets = {}
+        self.struct_table = struct_table or {}
+        self.impl_table = impl_table or {}
 
         self.env_struct_defs = []
         self.closure_vars = set()
@@ -69,10 +74,15 @@ class CCodeGenerator:
             for top in ast[1]:
                 if top[0] == 'func_def':
                     self._infer_func_return_type(top)
-            
+                elif top[0] == 'method_def':
+                    self._infer_method_return_type(top)
+                        
             for top in ast[1]:
                 if top[0] == 'func_def':
                     self.func_defs.append(self._gen_func_def(top))
+                elif top[0] == 'impl_def': 
+                    for method in top[2]:
+                        self.func_defs.append(self._gen_method_def(method, top[1]))
                 else:
                     self._gen_top_stmt(top)
         
@@ -88,6 +98,14 @@ class CCodeGenerator:
             return 'Vec_i32'
         elif type_str.startswith('Option<'):
             return 'Option_i32'
+        # ===== struct 类型 =====
+        elif type_str in self.struct_table:
+            return type_str
+        # 支持 &StructName 指针类型
+        elif isinstance(type_str, str) and type_str.startswith('&'):
+            base = type_str[1:]
+            if base in self.struct_table:
+                return f'{base} *'
         return 'int'
     
     # ==================== 闭包辅助方法 ====================
@@ -205,6 +223,15 @@ class CCodeGenerator:
             return False
         elif op == 'call':
             return self._expr_returns_closure(expr[1])
+        elif op == 'method_call':
+            # 检查方法是否返回闭包
+            obj_type = self._infer_expr_type(expr[1])
+            base_type = obj_type[1:] if isinstance(obj_type, str) and obj_type.startswith('&') else obj_type
+            method_name = expr[2]
+            if base_type in self.impl_table and method_name in self.impl_table[base_type]:
+                ret_type = self.impl_table[base_type][method_name].get('return_type', 'int')
+                return isinstance(ret_type, str) and ret_type.startswith('fn(')
+            return False
         return False
     
     def _is_closure_callee(self, expr) -> bool:
@@ -400,6 +427,17 @@ class CCodeGenerator:
         self.current_func_params = set()  # 清理
         self.func_return_types[func_name] = 'int'
 
+    def _infer_method_return_type(self, node: Tuple):
+        method_name = node[1]
+        body = node[3]
+        for stmt in body:
+            if stmt[0] == 'return':
+                ret_expr = stmt[1]
+                ret_type = self._infer_expr_type(ret_expr)
+                self.func_return_types[method_name] = ret_type
+                return
+        self.func_return_types[method_name] = 'int'
+
     def _infer_expr_type(self, expr: Any) -> str:
         """
         推断表达式对应的 C 类型名。
@@ -420,15 +458,24 @@ class CCodeGenerator:
             return 'int'
         elif op == 'var':
             name = expr[1]
-            # 4.14 步骤2：优先查闭包变量类型
+            # 优先查闭包变量类型
             if name in self.closure_var_types:
                 return self.closure_var_types[name]
             if name in self.let_var_types:
                 return self.let_var_types[name]
+            if hasattr(self, 'param_types') and name in self.param_types:
+                return self.param_types[name]
             return 'int'
         elif op == 'vec_literal':
             return 'Vec_i32'
         elif op == 'method_call':
+            obj_type = self._infer_expr_type(expr[1])
+            base_type = obj_type[1:] if isinstance(obj_type, str) and obj_type.startswith('&') else obj_type
+            if base_type in self.struct_table:
+                # struct 方法
+                method_name = expr[2]
+                if base_type in self.impl_table and method_name in self.impl_table[base_type]:
+                    return self.impl_table[base_type][method_name].get('return_type', 'int')
             if expr[2] in ('len', 'pop'):
                 return 'int'
             return 'void'
@@ -440,6 +487,8 @@ class CCodeGenerator:
             return 'int'
         elif op == 'match':
             return 'int'
+        elif op == 'struct_literal':
+            return expr[1]  # struct_name
         elif op == 'call':
             callee_expr = expr[1]
             # 1. callee 是变量：优先查函数表/let变量表，避免被 Closure_ 短路
@@ -524,6 +573,18 @@ class CCodeGenerator:
         for env_def in self.env_struct_defs:
             lines.append(env_def)
             lines.append('')
+
+        # ===== 5.12 新增：C struct 定义 =====
+        for struct_name, fields in self.struct_table.items():
+            field_lines = []
+            for field_name, field_type in fields:
+                c_type = self._c_type_from_str(field_type)
+                field_lines.append(f'    {c_type} {field_name};')
+            lines.append(f'typedef struct {{')
+            for fl in field_lines:
+                lines.append(fl)
+            lines.append(f'}} {struct_name};')
+            lines.append('')
         
         # 提升的匿名函数定义
         for fn_def in self.fn_expr_defs:
@@ -576,6 +637,14 @@ class CCodeGenerator:
         if any(i < len(sig_params) and sig_params[i] == 'Vec<i32>' for i in range(len(params))):
             self.includes.add('vec.h')
         
+        # 记录当前函数的参数类型，供 _infer_expr_type 查询变量类型
+        self.param_types = {}
+        for i, p in enumerate(params):
+            if i < len(sig_params):
+                self.param_types[p] = sig_params[i]
+            else:
+                self.param_types[p] = 'i32'   # 默认类型
+
         param_parts = []
         for i, p in enumerate(params):
             if i < len(sig_params):
@@ -630,7 +699,9 @@ class CCodeGenerator:
         lines.append('}')
         self.in_function = False
         self.current_func_params = set()
-        return '\n'.join(lines)
+
+        self.param_types = {}   # 清空参数类型表
+        return '\n'.join(lines) 
 
     # ==================== 顶层语句 ====================
     def _gen_top_stmt(self, node: Tuple):
@@ -739,6 +810,9 @@ class CCodeGenerator:
             return '\n'.join(self._generate_match_code(var_name, expr))
         
         type_str = self._infer_expr_type(expr)
+
+        self.let_var_types[var_name] = type_str
+
         if type_str == 'Vec_i32':
             c_type = 'Vec_i32'
         elif type_str == 'Option_i32':
@@ -749,10 +823,38 @@ class CCodeGenerator:
             self.closure_var_types[var_name] = c_type
             self._declare_closure_in_scope(var_name) 
         else:
-            c_type = 'int'
+            c_type = self._c_type_from_str(type_str)
 
         # 检查是否为函数类型
+                # 检查是否为函数类型
         if isinstance(type_str, str) and type_str.startswith('fn('):
+            # 新增：判断是否是闭包返回（方法调用返回闭包、函数调用返回闭包等）
+            if self._expr_returns_closure(expr):
+                parsed = self._parse_fn_type(type_str)
+                if parsed:
+                    fn_params, fn_ret = parsed
+                    ret_c_type = self._c_type_from_str(fn_ret)
+                    if isinstance(fn_ret, str) and fn_ret.startswith('fn('):
+                        inner_parsed = self._parse_fn_type(fn_ret)
+                        if inner_parsed:
+                            inner_params, _ = inner_parsed
+                            ret_c_type = self._closure_type(len(inner_params))
+                    closure_type = self._closure_type_for(len(fn_params), ret_c_type)
+                    
+                    # 标记为闭包变量
+                    self.closure_vars.add(var_name)
+                    self.closure_var_types[var_name] = closure_type
+                    self._declare_closure_in_scope(var_name)
+                    
+                    expr_code = self._generate_expr(expr)
+                    if '\n' in expr_code:
+                        parts = expr_code.split('\n')
+                        pre_stmts = parts[:-1]
+                        actual_expr = parts[-1]
+                        return '\n'.join(pre_stmts + [f'{closure_type} {var_name} = {actual_expr};'])
+                    return f'{closure_type} {var_name} = {expr_code};'
+            
+            # 原有：无捕获函数指针
             arrow_idx = type_str.find(')->')
             if arrow_idx != -1:
                 params_str = type_str[3:arrow_idx]
@@ -917,6 +1019,120 @@ class CCodeGenerator:
         
         lines.append("}")
         return '\n'.join(lines)
+    
+    # ==================== method ====================
+    def _gen_method_def(self, node: Tuple, struct_name: str = None) -> str:
+        self._enter_scope()
+        self.func_temp_closures = []
+        self.closure_params = set()
+
+        method_name = node[1]
+        params = node[2]  # [('&', 'self'), 'factor', ...]
+        body = node[3]
+
+        method_info = None
+        if struct_name and struct_name in self.impl_table:
+            method_info = self.impl_table[struct_name].get(method_name)
+        
+        # codegen.py → _gen_method_def 方法，替换 ret_type 推断逻辑
+
+        if method_info:
+            sig_params = method_info.get('params', [])
+            ret_type_str = method_info.get('return_type', 'int')
+            # 处理返回闭包的方法
+            if isinstance(ret_type_str, str) and ret_type_str.startswith('fn('):
+                parsed = self._parse_fn_type(ret_type_str)
+                if parsed:
+                    fn_params, fn_ret = parsed
+                    ret_c_type = self._c_type_from_str(fn_ret)
+                    if isinstance(fn_ret, str) and fn_ret.startswith('fn('):
+                        inner_parsed = self._parse_fn_type(fn_ret)
+                        if inner_parsed:
+                            inner_params, _ = inner_parsed
+                            ret_c_type = self._closure_type(len(inner_params))
+                    ret_type = self._closure_type_for(len(fn_params), ret_c_type)
+                else:
+                    ret_type = 'int'
+            else:
+                ret_type = self._c_type_from_str(ret_type_str)
+        else:
+            # fallback（理论上不应走到这里）
+            sig_params = []
+            ret_type = self.func_return_types.get(method_name, 'int')
+        
+        # 生成 C 函数名：{StructName}_{methodName}
+        c_func_name = f"{struct_name}_{method_name}" if struct_name else method_name
+        
+        # 记录当前方法的参数类型，供 _infer_expr_type 查询变量类型
+        self.param_types = {}
+        for i, p in enumerate(params):
+            param_name = p[1] if isinstance(p, tuple) else p   # 提取 'self' 或 'factor'
+            if i < len(sig_params):
+                self.param_types[param_name] = sig_params[i]
+            else:
+                self.param_types[param_name] = 'i32'
+
+        # 生成参数列表
+        param_parts = []
+        for i, p in enumerate(params):
+            if i < len(sig_params):
+                param_type = sig_params[i]
+                if isinstance(param_type, str) and param_type.startswith('&'):
+                    # &self → StructName *self
+                    base = param_type[1:]
+                    param_parts.append(f'{base} *{p[1] if isinstance(p, tuple) else p}')
+                elif param_type == 'Vec<i32>':
+                    param_parts.append(f'Vec_i32 {p}')
+                elif isinstance(param_type, str) and param_type.startswith('fn('):
+                    # 闭包参数（当前阶段 struct 方法不太可能用到，但保持一致性）
+                    parsed = self._parse_fn_type(param_type)
+                    if parsed:
+                        fn_params, fn_ret = parsed
+                        ret_c_type = self._c_type_from_str(fn_ret)
+                        if isinstance(fn_ret, str) and fn_ret.startswith('fn('):
+                            inner_parsed = self._parse_fn_type(fn_ret)
+                            if inner_parsed:
+                                inner_params, _ = inner_parsed
+                                ret_c_type = self._closure_type(len(inner_params))
+                        closure_type = self._closure_type_for(len(fn_params), ret_c_type)
+                        param_parts.append(f'{closure_type} {p}')
+                        self.closure_params.add(p)
+                    else:
+                        param_parts.append(f'int {p}')
+                else:
+                    param_parts.append(f'int {p}')
+            else:
+                param_parts.append(f'int {p}')
+        
+        param_str = ', '.join(param_parts) if param_parts else 'void'
+        
+        func_vec_vars = []
+        self.in_function = True
+        lines = [f'{ret_type} {c_func_name}({param_str}) {{']
+        
+        for stmt in body:
+            if stmt[0] == 'let_decl' and self._infer_expr_type(stmt[2]) == 'Vec_i32':
+                func_vec_vars.append(stmt[1])
+            
+            stmt_code = self._gen_stmt(stmt)
+            for line in stmt_code.split('\n'):
+                lines.append(f'    {line}')
+        
+        for var in func_vec_vars:
+            lines.append(f'    free({var}.data);')
+        
+        for tmp in self.func_temp_closures:
+            lines.append(f'    free({tmp}.env);')
+        self.func_temp_closures = []
+        
+        for free_stmt in self._exit_scope(lines):
+            lines.append(f'    {free_stmt}')
+        
+        lines.append('}')
+        self.in_function = False
+
+        self.param_types = {}   # 清空参数类型表
+        return '\n'.join(lines)
 
     # ==================== 通用表达式生成 ====================
     def _generate_expr(self, expr: Any, subs: dict = None) -> str:
@@ -935,6 +1151,27 @@ class CCodeGenerator:
                 return f"Some_i32({self._generate_expr(expr[1], subs)})"
             elif expr[0] == 'none':
                 return "None_i32()"
+            elif expr[0] == 'struct_literal':
+                struct_name = expr[1]
+                field_inits = expr[2]
+                # 按 struct_table 字段声明顺序排列初始化值
+                declared_fields = self.struct_table.get(struct_name, [])
+                init_dict = {f[1]: self._generate_expr(f[2], subs) for f in field_inits}
+                
+                init_values = []
+                for field_name, _ in declared_fields:
+                    init_values.append(init_dict.get(field_name, '0'))
+                # C99 compound literal
+                return f'({struct_name}){{{", ".join(init_values)}}}'
+            elif expr[0] == 'field_access':
+                obj_code = self._generate_expr(expr[1], subs)
+                field_name = expr[2]
+                obj_type = self._infer_expr_type(expr[1])
+                # 支持 Rectangle（值）和 &Rectangle（引用）
+                if isinstance(obj_type, str) and obj_type.startswith('&'):
+                    return f"({obj_code})->{field_name}"
+                else:
+                    return f"({obj_code}).{field_name}"
             elif expr[0] == 'fn_expr':
                 fn_name = self._new_fn_name()
                 fn_counter = self.fn_expr_counter
@@ -975,18 +1212,38 @@ class CCodeGenerator:
                 idx = self._generate_expr(expr[2], subs)
                 return f"vec_get_i32({obj}, {idx})"
             elif expr[0] == 'method_call':
-                obj = self._generate_expr(expr[1], subs)
+                obj_code = self._generate_expr(expr[1], subs)
                 method = expr[2]
-                args = [self._generate_expr(a, subs) for a in expr[3]]
+                args = expr[3]
+                obj_type = self._infer_expr_type(expr[1])
+                base_type = obj_type[1:] if isinstance(obj_type, str) and obj_type.startswith('&') else obj_type
+                # ===== struct 方法调用 =====
+                if base_type in self.struct_table:
+                    c_func_name = f"{base_type}_{method}"
+                    # 隐式注入 &self
+                    if isinstance(obj_type, str) and obj_type.startswith('&'):
+                        self_arg = obj_code          # 已经是指针，直接传
+                    else:
+                        self_arg = f"&({obj_code})"  # 值类型，取地址
+                    
+                    arg_codes = [self_arg]
+                    for a in args:
+                        arg_codes.append(self._generate_expr(a, subs))
+                    return f"{c_func_name}({', '.join(arg_codes)})"
                 if method == 'push':
-                    return f"vec_push_i32(&{obj}, {', '.join(args)})"
+                    return f"vec_push_i32(&{obj_code}, {', '.join(args)})"
                 elif method == 'len':
-                    return f"vec_len_i32({obj})"
+                    return f"vec_len_i32({obj_code})"
                 elif method == 'pop':
-                    return f"vec_pop_i32(&{obj})"
+                    return f"vec_pop_i32(&{obj_code})"
                 elif method == 'remove':
-                    return f"vec_remove_i32(&{obj}, {', '.join(args)})"
-                return f"{method}({obj}, {', '.join(args)})"
+                    return f"vec_remove_i32(&{obj_code}, {', '.join(args)})"
+                
+                if args:
+                    return f"{method}({obj_code}, {', '.join(args)})"
+                else:
+                    return f"{method}({obj_code})"
+                
             elif expr[0] in ['add', 'sub', 'mul', 'div']:
                 left = self._generate_expr(expr[1], subs)
                 right = self._generate_expr(expr[2], subs)
