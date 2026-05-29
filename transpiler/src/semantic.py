@@ -17,7 +17,7 @@ class SemanticAnalyzer:
         self._predeclared: Dict[str, str] = {}
         self.fn_expr_captures: Dict[int, List[str]] = {}
         self._fn_expr_depth = 0   # fn_expr 嵌套深度
-        self.moved_vars = set()   # 记录已被移动（move）的闭包变量
+        self.moved_vars = set()   # 记录 moved 的闭包变量
         self.captured_closure_vars = set()   # 有捕获闭包变量名
 
     def reset(self):
@@ -33,13 +33,13 @@ class SemanticAnalyzer:
         self.moved_vars.clear()
         self.captured_closure_vars.clear()
 
-    # === 4.14限制 ===
+    # === 辅助函数===
     def _is_local_var(self, name: str) -> bool:
-        """检查变量是否在当前最内层作用域中声明（参数或局部变量）"""
+        # 检查变量是否在当前最内层作用域中声明（参数或局部变量）
         return bool(self.symbol_table and name in self.symbol_table[-1])
 
     def _is_captured_closure_var_ref(self, node) -> bool:
-        """判断 AST 节点是否是『已绑定到有捕获闭包值的变量引用』"""
+        # 判断 AST 节点是否是已绑定到有捕获闭包值的变量引用
         if isinstance(node, tuple) and node[0] == 'var':
             var_name = node[1]
             return var_name in self.captured_closure_vars
@@ -74,7 +74,7 @@ class SemanticAnalyzer:
             self.errors.append("Error: parse error, AST is None")
             return False
         
-        # 第一遍：收集所有顶层函数签名
+        # 收集所有顶层函数签名
         if ast[0] == 'program':
             for top in ast[1]:
                 if top[0] == 'func_def':
@@ -82,11 +82,11 @@ class SemanticAnalyzer:
                     params = top[2]
                     self.func_table[func_name] = {
                         'params': ['unknown'] * len(params),
-                        'param_names': list(params),   # 新增：记录参数名顺序
+                        'param_names': list(params),   # 记录参数名顺序
                         'return_type': 'unknown'
                     }
 
-        # 第1.5遍：预收集顶层 let_decl 变量类型（用于调用参数推断）
+        # 预收集顶层 let_decl 变量类型
         self._predeclared.clear()
         if ast[0] == 'program':
             for top in ast[1]:
@@ -106,10 +106,10 @@ class SemanticAnalyzer:
                         expr_type = self._quick_infer_type(expr_node)
                     self._predeclared[var_name] = expr_type
         
-        # 第二遍：扫描所有调用节点，推断顶层函数参数类型
+        # 扫描所有调用节点，推断顶层函数参数类型
         self._collect_calls(ast)
         
-        # 第三遍：分析所有节点（包括顶层 let_decl、expr_stmt、func_def）
+        # 分析所有节点（包括顶层 let_decl、expr_stmt、func_def）
         self.visit(ast)
         
         return len(self.errors) == 0
@@ -181,8 +181,7 @@ class SemanticAnalyzer:
         if callee_node[0] == 'var':
             func_name = callee_node[1]
             func_info = self.func_table.get(func_name)
-            # 注意：第二遍扫描时符号表为空，无法 lookup 变量类型
-            # 函数变量的类型在第三遍 visit_let_decl 时确定，此处不处理
+            # 函数变量的类型在 visit_let_decl 时确定，此处不处理
         elif callee_node[0] == 'fn_expr':
             # 匿名函数直接调用，无需更新 func_table
             return
@@ -316,7 +315,7 @@ class SemanticAnalyzer:
             if expr_type != var_type:
                 self.errors.append(f"错误: 不能将 {expr_type} 赋值给 {var_type} 类型的变量 '{var_name}'")
 
-            # 4.14：若右侧是闭包变量，标记源变量已被移动
+            # 若右侧是闭包变量，标记源变量已被移动
             if self._is_captured_closure_var_ref(expr_node):
                 src_name = expr_node[1]
                 self.moved_vars.add(src_name)
@@ -352,7 +351,7 @@ class SemanticAnalyzer:
         for stmt in then_stmts:
             self.visit(stmt)
         self.exit_scope()
-        then_moved = self.moved_vars - saved_moved   # then 分支新增的 moved
+        then_moved = self.moved_vars - saved_moved   # then 分支的 moved
         
         # 恢复快照，准备分析 else
         self.moved_vars = set(saved_moved)
@@ -364,9 +363,8 @@ class SemanticAnalyzer:
             for stmt in else_stmts:
                 self.visit(stmt)
             self.exit_scope()
-            else_moved = self.moved_vars - saved_moved   # else 分支新增的 moved
+            else_moved = self.moved_vars - saved_moved   # else 分支的 moved
         
-        # 合并：取并集（保守策略）
         # 只要变量在任一新增路径中被移动，合并后就视为已移动
         self.moved_vars = saved_moved.union(then_moved).union(else_moved)
 
@@ -439,10 +437,9 @@ class SemanticAnalyzer:
                 self.captured_closure_vars.add(var_name)
         elif isinstance(expr_type, str) and expr_type.startswith('fn('):
             # 通过调用/其他表达式获得函数类型：保守假设为有捕获闭包
-            # （如 add(3) 返回的闭包，make_adder(5) 返回的闭包）
             self.captured_closure_vars.add(var_name)
 
-        # 4.14：若右侧是有捕获闭包变量，标记源变量已被移动
+        # 若右侧是有捕获闭包变量，标记源变量已被移动
         if self._is_captured_closure_var_ref(expr_node):
             src_name = expr_node[1]
             self.moved_vars.add(src_name)
@@ -457,7 +454,7 @@ class SemanticAnalyzer:
         expr_node = node[1]
         expr_type = self.visit_expr(node[1])
 
-        # 4.14：若返回的是闭包变量，标记为已移动
+        # 若返回的是闭包变量，标记为已移动
         if self._is_captured_closure_var_ref(expr_node):
             src_name = expr_node[1]
             self.moved_vars.add(src_name)
@@ -911,7 +908,7 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"解析错误: {e}")
 
-    # 临时验证 Step 1
+    # 临时验证
     code = """
     let x = 1;
     let add = fn(a) => fn(b) => x + a + b;
