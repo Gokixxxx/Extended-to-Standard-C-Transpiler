@@ -19,6 +19,8 @@ class SemanticAnalyzer:
         self._fn_expr_depth = 0   # fn_expr 嵌套深度
         self.moved_vars = set()   # 记录 moved 的闭包变量
         self.captured_closure_vars = set()   # 有捕获闭包变量名
+        self.struct_table: Dict[str, List[Tuple[str, str]]] = {}
+        self.impl_table: Dict[str, Dict[str, Dict[str, Any]]] = {}
 
     def reset(self):
         self.symbol_table = [{}]
@@ -32,6 +34,8 @@ class SemanticAnalyzer:
         self._fn_expr_depth = 0
         self.moved_vars.clear()
         self.captured_closure_vars.clear()
+        self.struct_table = {}
+        self.impl_table = {}
 
     # === 辅助函数===
     def _is_local_var(self, name: str) -> bool:
@@ -74,6 +78,65 @@ class SemanticAnalyzer:
             self.errors.append("Error: parse error, AST is None")
             return False
         
+        # 收集所有 struct 定义
+        if ast[0] == 'program':
+            for top in ast[1]:
+                if top[0] == 'struct_def':
+                    struct_name = top[1]
+                    fields = top[2]
+                    if struct_name in self.struct_table:
+                        self.errors.append(f"错误: struct '{struct_name}' 重复定义")
+                        continue
+                    field_names = set()
+                    field_list = []
+                    for field in fields:
+                        field_name = field[1]
+                        field_type = field[2]
+                        if field_name in field_names:
+                            self.errors.append(f"错误: struct '{struct_name}' 中字段 '{field_name}' 重复定义")
+                        field_names.add(field_name)
+                        if field_type != 'i32':
+                            self.errors.append(f"错误: struct 字段暂只支持 i32 类型，'{field_name}' 类型为 '{field_type}'")
+                        field_list.append((field_name, field_type))
+                    self.struct_table[struct_name] = field_list
+        
+        # 收集所有 impl 定义
+        if ast[0] == 'program':
+            for top in ast[1]:
+                if top[0] == 'impl_def':
+                    struct_name = top[1]
+                    methods = top[2]
+                    if struct_name not in self.struct_table:
+                        self.errors.append(f"错误: impl 目标 struct '{struct_name}' 未定义")
+                        continue
+                    if struct_name not in self.impl_table:
+                        self.impl_table[struct_name] = {}
+                    for method in methods:
+                        method_name = method[1]
+                        params = method[2]  # [('&', 'self'), 'factor', ...]
+                        body = method[3]
+                        if method_name in self.impl_table[struct_name]:
+                            self.errors.append(f"错误: struct '{struct_name}' 的方法 '{method_name}' 重复定义")
+                            continue
+                        # 推断返回类型：扫描 body 中的 return 语句
+                        ret_type = 'void'
+                        for stmt in body:
+                            if isinstance(stmt, tuple) and stmt[0] == 'return':
+                                ret_type = self._quick_infer_type(stmt[1])
+                                break
+                        # 参数类型：&self → '&{struct_name}'，其余 → 'i32'
+                        param_types = []
+                        for p in params:
+                            if isinstance(p, tuple) and p[0] == '&':
+                                param_types.append(f'&{struct_name}')
+                            else:
+                                param_types.append('i32')
+                        self.impl_table[struct_name][method_name] = {
+                            'params': param_types,
+                            'param_names': params,
+                            'return_type': ret_type
+                        }
+
         # 收集所有顶层函数签名
         if ast[0] == 'program':
             for top in ast[1]:
@@ -253,6 +316,13 @@ class SemanticAnalyzer:
             elif node_type == 'func_def':
                 self._analyze_func_body(node)
 
+            elif node_type == 'impl_def':
+                # impl 块在预扫描时已处理，visit 阶段跳过
+                pass
+
+            elif node_type == 'method_def':
+                self._analyze_method_body(node)
+
             elif node_type == 'let_decl':
                 self.visit_let_decl(node)
 
@@ -414,6 +484,44 @@ class SemanticAnalyzer:
             if param_type == 'unknown':
                 param_type = 'fn_unknown'  # 保持未知，标记为"待推断"
             self.declare(param, param_type)
+
+        for stmt in body:
+            self.visit(stmt)
+
+        self.exit_scope()
+        self.current_func = prev_func
+
+    def _analyze_method_body(self, node: Tuple):
+        method_name = node[1]
+        params = node[2]      # [('&', 'self'), 'factor', ...]
+        body = node[3]
+
+        # 从 impl_table 查找所属 struct 和方法签名
+        struct_name = None
+        method_info = None
+        for s_name, methods in self.impl_table.items():
+            if method_name in methods:
+                struct_name = s_name
+                method_info = methods[method_name]
+                break
+        
+        if struct_name is None:
+            self.errors.append(f"错误: 方法 '{method_name}' 未在 impl 块中定义")
+            return
+
+        prev_func = self.current_func
+        self.current_func = f"{struct_name}::{method_name}"
+        self.enter_scope()
+
+        # 注入参数到符号表
+        param_names = method_info['param_names']
+        param_types = method_info['params']
+        for i, param in enumerate(param_names):
+            if isinstance(param, tuple) and param[0] == '&':
+                # &self 参数
+                self.declare(param[1], param_types[i])
+            else:
+                self.declare(param, param_types[i])
 
         for stmt in body:
             self.visit(stmt)
@@ -586,6 +694,41 @@ class SemanticAnalyzer:
 
         obj_type = self.visit_expr(obj_expr)
 
+        # ===== 5.10 新增：struct 方法调用 =====
+        # 支持 'StructName' 和 '&StructName' 两种对象类型
+        base_type = obj_type
+        if isinstance(obj_type, str) and obj_type.startswith('&'):
+            base_type = obj_type[1:]
+        
+        if base_type in self.struct_table:
+            # struct 方法调用
+            if base_type not in self.impl_table or method_name not in self.impl_table[base_type]:
+                self.errors.append(f"错误: struct '{base_type}' 没有方法 '{method_name}'")
+                return 'unknown'
+            
+            method_info = self.impl_table[base_type][method_name]
+            expected_params = method_info['params']  # ['&Rectangle', 'i32', ...]
+            return_type = method_info['return_type']
+            
+            # 参数数量检查：用户提供的 args + 隐式的 &self
+            # 实际调用时 args 是用户显式传的，需要与 expected_params[1:] 比较
+            user_expected_params = expected_params[1:]  # 去掉 &self
+            if len(args) != len(user_expected_params):
+                self.errors.append(
+                    f"错误: 方法 '{method_name}' 期望 {len(user_expected_params)} 个用户参数，实际 {len(args)} 个"
+                )
+            
+            # 参数类型检查
+            for i, arg in enumerate(args):
+                arg_type = self.visit_expr(arg)
+                if i < len(user_expected_params) and arg_type != user_expected_params[i]:
+                    self.errors.append(
+                        f"错误: 方法 '{method_name}' 第 {i+1} 个参数期望 {user_expected_params[i]}，实际 {arg_type}"
+                    )
+            
+            return return_type
+
+
         if obj_type != 'Vec<i32>':
             self.errors.append(f"错误: 方法调用要求 Vec<i32>，但得到 {obj_type}")
             return 'unknown'
@@ -752,6 +895,63 @@ class SemanticAnalyzer:
                         self.errors.append(f"错误: 未声明的变量 '{name}'")
                         return 'unknown'
                 return t
+            
+            elif node_type == 'struct_literal':
+                struct_name = node[1]
+                field_inits = node[2]
+                
+                if struct_name not in self.struct_table:
+                    self.errors.append(f"错误: 未定义的 struct 类型 '{struct_name}'")
+                    return 'unknown'
+                
+                declared_fields = self.struct_table[struct_name]
+                declared_dict = {name: typ for name, typ in declared_fields}
+                
+                # 检查字段完整性：无多余、无缺失
+                init_names = set()
+                for finit in field_inits:
+                    field_name = finit[1]
+                    field_expr = finit[2]
+                    if field_name in init_names:
+                        self.errors.append(f"错误: struct '{struct_name}' 初始化中字段 '{field_name}' 重复")
+                    init_names.add(field_name)
+                    if field_name not in declared_dict:
+                        self.errors.append(f"错误: struct '{struct_name}' 没有字段 '{field_name}'")
+                        continue
+                    expr_type = self.visit_expr(field_expr)
+                    if expr_type != declared_dict[field_name]:
+                        self.errors.append(f"错误: struct '{struct_name}' 字段 '{field_name}' 期望 {declared_dict[field_name]}，实际 {expr_type}")
+                
+                # 检查缺失字段
+                for field_name, _ in declared_fields:
+                    if field_name not in init_names:
+                        self.errors.append(f"错误: struct '{struct_name}' 初始化缺少字段 '{field_name}'")
+                
+                return struct_name
+            
+            elif node_type == 'field_access':
+                obj_expr = node[1]
+                field_name = node[2]
+                
+                obj_type = self.visit_expr(obj_expr)
+                
+                # 支持 'StructName' 和 '&StructName' 两种对象类型
+                base_type = obj_type
+                if isinstance(obj_type, str) and obj_type.startswith('&'):
+                    base_type = obj_type[1:]
+                
+                if base_type not in self.struct_table:
+                    self.errors.append(f"错误: 字段访问要求 struct 类型，但得到 {obj_type}")
+                    return 'unknown'
+                
+                declared_fields = self.struct_table[base_type]
+                declared_dict = {name: typ for name, typ in declared_fields}
+                
+                if field_name not in declared_dict:
+                    self.errors.append(f"错误: struct '{base_type}' 没有字段 '{field_name}'")
+                    return 'unknown'
+                
+                return declared_dict[field_name]
 
             elif node_type == 'num':
                 return 'i32'
@@ -881,11 +1081,26 @@ if __name__ == '__main__':
     from transpiler.src.parser import RustLikeParser
 
     test_cases = [
-        ("解除嵌套闭包的语义限制", """
-        let x = 1;
-        let add = fn(a) => fn(b) => x + a + b;
-        let result = add(3)(4);
-        """),
+    ("Method call 类型检查", """
+    struct Rectangle {
+        width: i32,
+        height: i32
+    }
+    
+    impl Rectangle {
+        fn area(&self) {
+            return self.width * self.height;
+        }
+        
+        fn scale(&self, factor) {
+            return self.width * factor;
+        }
+    }
+    
+    let rect1 = Rectangle { width: 30, height: 50 };
+    let a = rect1.area();
+    let s = rect1.scale(2);
+    """),
     ]
 
     lexer = RustLikeLexer()
@@ -907,17 +1122,3 @@ if __name__ == '__main__':
                 print("通过")
         except Exception as e:
             print(f"解析错误: {e}")
-
-    # 临时验证
-    code = """
-    let x = 1;
-    let add = fn(a) => fn(b) => x + a + b;
-    """
-    tokens = lexer.tokenize(code)
-    ast = parser.parse(tokens)
-    analyzer.reset()
-    analyzer.analyze(ast)
-    
-    # 打印所有 fn_expr 的捕获列表
-    for node_id, caps in analyzer.fn_expr_captures.items():
-        print(f"fn_expr {node_id}: captures {caps}")
