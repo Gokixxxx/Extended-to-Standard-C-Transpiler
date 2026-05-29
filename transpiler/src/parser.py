@@ -8,7 +8,7 @@ _: Any
 
 class RustLikeParser(Parser):
     tokens = RustLikeLexer.tokens
-    expect = 6  # 允许 6 个 shift/reduce 冲突（is_some/is_none 前缀/后缀/属性写法重叠）
+    expect = 8
 
     precedence = (
         ('right', 'EQ'),
@@ -42,6 +42,14 @@ class RustLikeParser(Parser):
     @_('statement')
     def top_level(self, p):
         return p.statement
+    
+    @_('struct_def')
+    def top_level(self, p):
+        return p.struct_def
+    
+    @_('impl_def')
+    def top_level(self, p):
+        return p.impl_def
     
     # ==================== 函数定义（独立参数列表，与 Lambda 隔离）====================
     @_('FN IDENTIFIER LPAREN func_params RPAREN LBRACE statements RBRACE')
@@ -117,6 +125,14 @@ class RustLikeParser(Parser):
     def atom(self, p):
         return ('none',)
     
+    @_('IDENTIFIER LBRACE field_init_list RBRACE')
+    def atom(self, p):
+        return ('struct_literal', p.IDENTIFIER, p.field_init_list)
+
+    @_('IDENTIFIER LBRACE RBRACE')
+    def atom(self, p):
+        return ('struct_literal', p.IDENTIFIER, [])
+    
     @_('LPAREN expr RPAREN')
     def atom(self, p):
         return p.expr
@@ -167,6 +183,10 @@ class RustLikeParser(Parser):
     @_('lambda_or_fn')
     def postfix(self, p):
         return p.lambda_or_fn
+    
+    @_('postfix DOT IDENTIFIER')
+    def postfix(self, p):
+        return ('field_access', p.postfix, p.IDENTIFIER)
     
     @_('postfix LPAREN arg_list RPAREN')
     def postfix(self, p):
@@ -302,33 +322,87 @@ class RustLikeParser(Parser):
     @_('NONE FAT_ARROW expr')
     def match_case(self, p):
         return ('none_case', p.expr)
+    
+    # ===== struct_def / field_list / field 规则 =====
+    @_('STRUCT IDENTIFIER LBRACE field_list RBRACE')
+    def struct_def(self, p):
+        return ('struct_def', p.IDENTIFIER, p.field_list)
+
+    @_('STRUCT IDENTIFIER LBRACE RBRACE')
+    def struct_def(self, p):
+        return ('struct_def', p.IDENTIFIER, [])
+
+    @_('field')
+    def field_list(self, p):
+        return [p.field]
+
+    @_('field_list COMMA field')
+    def field_list(self, p):
+        return p.field_list + [p.field]
+
+    @_('IDENTIFIER COLON IDENTIFIER')
+    def field(self, p):
+        return ('field', p.IDENTIFIER0, p.IDENTIFIER1)
+
+    # ===== impl_def / method_list / method_def / self_param 规则 =====
+    @_('IMPL IDENTIFIER LBRACE method_list RBRACE')
+    def impl_def(self, p):
+        return ('impl_def', p.IDENTIFIER, p.method_list)
+
+    @_('method_def')
+    def method_list(self, p):
+        return [p.method_def]
+
+    @_('method_list method_def')
+    def method_list(self, p):
+        return p.method_list + [p.method_def]
+
+    @_('FN IDENTIFIER LPAREN self_param RPAREN LBRACE statements RBRACE')
+    def method_def(self, p):
+        return ('method_def', p.IDENTIFIER, [p.self_param], p.statements)
+
+    @_('FN IDENTIFIER LPAREN self_param COMMA func_params RPAREN LBRACE statements RBRACE')
+    def method_def(self, p):
+        return ('method_def', p.IDENTIFIER, [p.self_param] + p.func_params, p.statements)
+
+    @_('AMPERSAND IDENTIFIER')
+    def self_param(self, p):
+        return ('&', p.IDENTIFIER)
+    
+
+    # ===== field_init_list / field_init 规则=====
+    @_('field_init')
+    def field_init_list(self, p):
+        return [p.field_init]
+
+    @_('field_init_list COMMA field_init')
+    def field_init_list(self, p):
+        return p.field_init_list + [p.field_init]
+
+    @_('IDENTIFIER COLON expr')
+    def field_init(self, p):
+        return ('field_init', p.IDENTIFIER, p.expr)
 
 if __name__ == '__main__':
     from transpiler.src.lexer import RustLikeLexer
     lexer = RustLikeLexer()
     parser = RustLikeParser()
     
-    code ='''
-    let add = fn(x, y) => x + y;
-    let result = add(3, 4);
+    code = '''
+    struct Rectangle {
+        width: i32,
+        height: i32
+    }
 
-    let greet = fn() => 42;
-    let g = greet();
-    
-    let v = [1, 2, 3];
-    v.push(10);
-    let x = v[1];
-    v[1] = 5;
-    
-    let opt = Some(10);
-    let b = opt.is_some;
-    let c = is_some(opt);
-    let d = opt is_some;
-    
-    let y = match opt {
-        Some(v) => v + 1,
-        None => 0
-    };
+    impl Rectangle {
+        fn area(&self) {
+            return self.width * self.height;
+        }
+    }
+
+    let rect1 = Rectangle { width: 30, height: 50 };
+    let a = rect1.area();
+    let w = rect1.width;
     '''
     
     print("Parsing code:")
