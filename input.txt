@@ -1,7 +1,10 @@
-let a = 1;
+let a = 10;
 let f = fn(x) => a + x;
-if (1 > 0) {
-    let g = f;
-} else {
-    let h = f;
+let g = f;
+let r1 = g(5);
+
+fn apply_twice(f, x) {
+    return f(f(x));
 }
+let add3 = fn(x) => x + 3;
+let r6 = apply_twice(add3, 5);

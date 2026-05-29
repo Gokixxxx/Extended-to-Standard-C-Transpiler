@@ -42,9 +42,6 @@ class SemanticAnalyzer:
         """判断 AST 节点是否是『已绑定到有捕获闭包值的变量引用』"""
         if isinstance(node, tuple) and node[0] == 'var':
             var_name = node[1]
-            # 如果是当前作用域的局部变量（参数或本作用域 let），不触发 move
-            if self._is_local_var(var_name):
-                return False
             return var_name in self.captured_closure_vars
         return False
 
