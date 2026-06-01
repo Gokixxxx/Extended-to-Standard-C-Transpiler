@@ -1193,13 +1193,32 @@ class CCodeGenerator:
                 field_inits = expr[2]
                 # 按 struct_table 字段声明顺序排列初始化值
                 declared_fields = self.struct_table.get(struct_name, [])
-                init_dict = {f[1]: self._generate_expr(f[2], subs) for f in field_inits}
                 
+                pre_stmts = []
                 init_values = []
                 for field_name, _ in declared_fields:
-                    init_values.append(init_dict.get(field_name, '0'))
-                # C99 compound literal
-                return f'({struct_name}){{{", ".join(init_values)}}}'
+                    # 找到对应的初始化表达式
+                    field_expr = None
+                    for f in field_inits:
+                        if f[1] == field_name:
+                            field_expr = f[2]
+                            break
+                    if field_expr is None:
+                        init_values.append('0')
+                        continue
+                    
+                    field_code = self._generate_expr(field_expr, subs)
+                    # 处理多行前置语句（如闭包构造、vec_literal、返回闭包的调用）
+                    if '\n' in field_code:
+                        parts = field_code.split('\n')
+                        pre_stmts.extend(parts[:-1])
+                        field_code = parts[-1]
+                    init_values.append(field_code)
+                
+                compound_literal = f'({struct_name}){{{", ".join(init_values)}}}'
+                if pre_stmts:
+                    return '\n'.join(pre_stmts + [compound_literal])
+                return compound_literal
             elif expr[0] == 'field_access':
                 obj_code = self._generate_expr(expr[1], subs)
                 field_name = expr[2]
@@ -1367,10 +1386,10 @@ class CCodeGenerator:
                 
                 # 判断是否需要临时变量（闭包调用链）
                 callee_ret_type = self._infer_expr_type(callee_expr)
-                needs_temp = (is_closure and callee_expr[0] == 'call')
+                needs_temp = (is_closure and callee_expr[0] in ('call', 'method_call'))
                 closure_type = None
                 
-                if not needs_temp and callee_expr[0] == 'call':
+                if not needs_temp and callee_expr[0] in ('call', 'method_call'):
                     # callee 是普通函数调用，但返回闭包（如 add(3) 返回 Closure）
                     if isinstance(callee_ret_type, str) and callee_ret_type.startswith('Closure_'):
                         needs_temp = True
