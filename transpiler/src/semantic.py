@@ -254,7 +254,6 @@ class SemanticAnalyzer:
         if callee_node[0] == 'var':
             func_name = callee_node[1]
             func_info = self.func_table.get(func_name)
-            # 函数变量的类型在 visit_let_decl 时确定，此处不处理
         elif callee_node[0] == 'fn_expr':
             # 匿名函数直接调用，无需更新 func_table
             return
@@ -583,6 +582,11 @@ class SemanticAnalyzer:
         expr_node = node[2]
 
         expr_type = self.visit_expr(expr_node)
+
+        if expr_type == 'void':
+            self.errors.append(f"错误: 不能将 void 赋值给变量 '{var_name}'")
+            return
+
         self.declare(var_name, expr_type)
 
         # 判断本变量是否绑定到有捕获闭包（直接字面量 或 调用返回）
