@@ -1,4 +1,4 @@
-# Rust-like → C Transpiler
+# Rust-like to C Transpiler
 
 一个将类 Rust 语法转译为标准 C 代码的源到源编译器（Source-to-Source Compiler），支持现代语言特性（闭包、代数数据类型、泛型容器、方法调用），生成的 C 代码零外部库依赖，可直接用标准 C 编译器编译运行。
 
@@ -31,8 +31,8 @@
 │   ├── src/
 │   │   ├── __init__.py
 │   │   ├── lexer.py          # 词法分析器
-│   │   ├── parser.py         # 语法分析器（SLY LALR）
-│   │   ├── semantic.py       # 语义分析器（类型检查、闭包捕获分析）
+│   │   ├── parser.py         # 语法分析器
+│   │   ├── semantic.py       # 语义分析器
 │   │   ├── codegen.py        # C 代码生成器
 │   │   └── compiler.py       # 编译器入口
 │   ├── tests/
@@ -42,14 +42,13 @@
 │   │   ├── testP5.py         # Struct/Impl 测试
 │   │   └── testP6.py         # print 输出测试
 │   └── runtime/
-│       ├── option.h            # Option<i32> 运行时
-│       ├── vec.h               # Vec<i32> 运行时
-│       └── closure.h           # 闭包结构体定义
-├── main.py                     # 命令行入口
-├── input.txt                   # 输入源文件
-├── output.c                    # 生成 C 文件
-├── instructor.md               # 项目规划与进度
-└── README.md                   # 本文件
+│       ├── option.h          # Option<i32> 运行时
+│       ├── vec.h             # Vec<i32> 运行时
+│       └── closure.h         # 闭包结构体定义
+├── main.py                   # 命令行入口
+├── input.txt                 # 输入源文件
+├── output.c                  # 生成的 C 文件
+└── README.md                 # 本文件
 ```
 
 ## 语言语法
