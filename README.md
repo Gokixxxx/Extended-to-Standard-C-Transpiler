@@ -30,11 +30,12 @@
 ├── transpiler/
 │   ├── src/
 │   │   ├── __init__.py
+|   |   ├── main.py           # 命令行入口
+│   │   ├── compiler.py       # 编译器入口
 │   │   ├── lexer.py          # 词法分析器
 │   │   ├── parser.py         # 语法分析器
 │   │   ├── semantic.py       # 语义分析器
-│   │   ├── codegen.py        # C 代码生成器
-│   │   └── compiler.py       # 编译器入口
+│   │   └── codegen.py        # C 代码生成器
 │   ├── tests/
 │   │   ├── __init__.py
 │   │   ├── testP0.py         # 基础功能测试
@@ -45,7 +46,6 @@
 │       ├── option.h          # Option<i32> 运行时
 │       ├── vec.h             # Vec<i32> 运行时
 │       └── closure.h         # 闭包结构体定义
-├── main.py                   # 命令行入口
 ├── input.txt                 # 输入源文件
 ├── output.c                  # 生成的 C 文件
 └── README.md                 # 本文件
