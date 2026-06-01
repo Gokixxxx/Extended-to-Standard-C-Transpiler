@@ -98,14 +98,17 @@ class CCodeGenerator:
             return 'Vec_i32'
         elif type_str.startswith('Option<'):
             return 'Option_i32'
-        # ===== struct 类型 =====
+        # struct 类型
         elif type_str in self.struct_table:
             return type_str
-        # 支持 &StructName 指针类型
+        # &StructName 指针类型
         elif isinstance(type_str, str) and type_str.startswith('&'):
             base = type_str[1:]
             if base in self.struct_table:
                 return f'{base} *'
+        # Closure 类型
+        elif isinstance(type_str, str) and type_str.startswith('Closure_'):
+            return type_str
         return 'int'
     
     # ==================== 闭包辅助方法 ====================
