@@ -74,3 +74,4 @@ instructor.md
 # debug
 *.out
 output
+debugcode.*

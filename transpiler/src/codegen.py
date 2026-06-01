@@ -410,6 +410,18 @@ class CCodeGenerator:
         params = node[2]
         self.current_func_params = set(params)
         body = node[3]
+        
+        # 临时设置 param_types，供 _infer_expr_type 查询
+        func_sig = self.func_signatures.get(func_name, {})
+        sig_params = func_sig.get('params', [])
+        saved_param_types = getattr(self, 'param_types', {})
+        self.param_types = {}
+        for i, p in enumerate(params):
+            if i < len(sig_params):
+                self.param_types[p] = sig_params[i]
+            else:
+                self.param_types[p] = 'i32'
+        
         for stmt in body:
             if stmt[0] == 'return':
                 ret_expr = stmt[1]
@@ -421,19 +433,45 @@ class CCodeGenerator:
                         ret_type = self._closure_type(len(params_ret))
                 self.func_return_types[func_name] = ret_type
                 self.current_func_params = set()  # 清理
+                self.param_types = saved_param_types  # 恢复
                 return
         self.current_func_params = set()  # 清理
+        self.param_types = saved_param_types  # 恢复
         self.func_return_types[func_name] = 'int'
 
     def _infer_method_return_type(self, node: Tuple):
         method_name = node[1]
+        params = node[2]
         body = node[3]
+        
+        # 从 impl_table 查找方法签名，临时设置 param_types
+        saved_param_types = getattr(self, 'param_types', {})
+        self.param_types = {}
+        struct_name = None
+        method_info = None
+        for s_name, methods in self.impl_table.items():
+            if method_name in methods:
+                struct_name = s_name
+                method_info = methods[method_name]
+                break
+        
+        if method_info:
+            sig_params = method_info.get('params', [])
+            param_names = method_info.get('param_names', [])
+            for i, p in enumerate(param_names):
+                if isinstance(p, tuple) and p[0] == '&':
+                    self.param_types[p[1]] = sig_params[i]
+                else:
+                    self.param_types[p] = sig_params[i]
+        
         for stmt in body:
             if stmt[0] == 'return':
                 ret_expr = stmt[1]
                 ret_type = self._infer_expr_type(ret_expr)
                 self.func_return_types[method_name] = ret_type
+                self.param_types = saved_param_types
                 return
+        self.param_types = saved_param_types
         self.func_return_types[method_name] = 'int'
 
     def _infer_expr_type(self, expr: Any) -> str:
@@ -623,7 +661,7 @@ class CCodeGenerator:
         func_name = node[1]
         params = node[2]
         body = node[3]
-        ret_type = self.func_return_types.get(func_name, 'int')
+        ret_type = self._c_type_from_str(self.func_return_types.get(func_name, 'int'))
         
         # 记录当前函数参数，避免与顶层闭包变量同名冲突
         self.current_func_params = set(params)
@@ -665,7 +703,8 @@ class CCodeGenerator:
                     else:
                         param_parts.append(f'int {p}')
                 else:
-                    param_parts.append(f'int {p}')
+                    c_type = self._c_type_from_str(param_type)
+                    param_parts.append(f'{c_type} {p}')
             else:
                 param_parts.append(f'int {p}')
                 
@@ -1053,9 +1092,9 @@ class CCodeGenerator:
             else:
                 ret_type = self._c_type_from_str(ret_type_str)
         else:
-            # fallback（理论上不应走到这里）
+            # fallback
             sig_params = []
-            ret_type = self.func_return_types.get(method_name, 'int')
+            ret_type = self._c_type_from_str(self.func_return_types.get(method_name, 'int'))
         
         # 生成 C 函数名：{StructName}_{methodName}
         c_func_name = f"{struct_name}_{method_name}" if struct_name else method_name
@@ -1097,7 +1136,8 @@ class CCodeGenerator:
                     else:
                         param_parts.append(f'int {p}')
                 else:
-                    param_parts.append(f'int {p}')
+                    c_type = self._c_type_from_str(param_type)
+                    param_parts.append(f'{c_type} {p}')
             else:
                 param_parts.append(f'int {p}')
         

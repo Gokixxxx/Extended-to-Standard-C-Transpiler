@@ -123,12 +123,11 @@ class SemanticAnalyzer:
                         if params and isinstance(params[0], tuple) and params[0][0] == '&':
                             self._predeclared[params[0][1]] = f'&{struct_name}'
                         
-                        # 推断返回类型：扫描 body 中的 return 语句
+                        # 推断返回类型：递归扫描 body 中的 return 语句
                         ret_type = 'void'
-                        for stmt in body:
-                            if isinstance(stmt, tuple) and stmt[0] == 'return':
-                                ret_type = self._quick_infer_type(stmt[1])
-                                break
+                        return_expr = self._find_first_return_expr(body)
+                        if return_expr is not None:
+                            ret_type = self._quick_infer_type(return_expr)
                         
                         # 清理临时注入，避免污染后续分析
                         if params and isinstance(params[0], tuple) and params[0][0] == '&':
@@ -267,6 +266,33 @@ class SemanticAnalyzer:
             arg_type = self._quick_infer_type(arg)
             if i < len(func_info['params']) and func_info['params'][i] == 'unknown':
                 func_info['params'][i] = arg_type
+
+    def _find_first_return_expr(self, stmts: list) -> Any:
+        """递归在语句列表中查找第一个 return 的表达式节点"""
+        for stmt in stmts:
+            if not isinstance(stmt, tuple):
+                continue
+            op = stmt[0]
+            if op == 'return':
+                return stmt[1]
+            elif op == 'if':
+                # 先查 then 分支
+                expr = self._find_first_return_expr(stmt[2])
+                if expr is not None:
+                    return expr
+                # 再查 else 分支
+                expr = self._find_first_return_expr(stmt[3])
+                if expr is not None:
+                    return expr
+            elif op == 'for_in':
+                expr = self._find_first_return_expr(stmt[3])
+                if expr is not None:
+                    return expr
+            elif op == 'while':
+                expr = self._find_first_return_expr(stmt[2])
+                if expr is not None:
+                    return expr
+        return None
     
     def _quick_infer_type(self, node: Any) -> str:
         """快速推断类型，不报错，用于参数类型推断"""
@@ -311,6 +337,8 @@ class SemanticAnalyzer:
                 declared_dict = {name: typ for name, typ in declared_fields}
                 return declared_dict.get(field_name, 'unknown')
             return 'unknown'
+        elif op == 'struct_literal':
+            return node[1]  # struct_name
         elif op == 'fn_expr':
             params = node[1]
             body = node[2]
