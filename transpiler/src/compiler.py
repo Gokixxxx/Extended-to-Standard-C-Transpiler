@@ -43,25 +43,15 @@ class Compiler:
 
 
 def test_compiler():
-    source12 = """
-    struct Rectangle {
-        width: i32,
-        height: i32
-    }
-
-    impl Rectangle {
-        fn area(&self) {
-            return self.width * self.height;
-        }
-    }
-
-    let rect = new Rectangle { width: 30, height: 50 };
-    let a = rect.area();
+    sourceP = """
+    let x = 10;
+    print(x);
+    print(x + 5);
     """
-    compiler12 = Compiler()
+    compilerP = Compiler()
     try:
-        c_code12 = compiler12.compile(source12)
-        print(c_code12)
+        c_codeP = compilerP.compile(sourceP)
+        print(c_codeP)
     except Exception as e:
         print(f"错误: {e}")
     print()

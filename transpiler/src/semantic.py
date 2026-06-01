@@ -1044,6 +1044,12 @@ class SemanticAnalyzer:
             elif node_type == 'match':
                 self.visit_match(node)
                 return 'i32'
+            
+            elif node_type == 'print':
+                arg_type = self.visit_expr(node[1])
+                if arg_type != 'i32':
+                    self.errors.append(f"错误: print 只支持 i32，但得到 {arg_type}")
+                return 'void'
 
             elif node_type == 'call':
                 return self.visit_call(node)
@@ -1132,25 +1138,11 @@ if __name__ == '__main__':
     from transpiler.src.parser import RustLikeParser
 
     test_cases = [
-    ("Method call 类型检查", """
-    struct Rectangle {
-        width: i32,
-        height: i32
-    }
-    
-    impl Rectangle {
-        fn area(&self) {
-            return self.width * self.height;
-        }
-        
-        fn scale(&self, factor) {
-            return self.width * factor;
-        }
-    }
-    
-    let rect1 = Rectangle { width: 30, height: 50 };
-    let a = rect1.area();
-    let s = rect1.scale(2);
+    ("print正负测试", """
+    let x = 10;
+    print(x);
+    print(x + 5);
+    let y = print(1);
     """),
     ]
 

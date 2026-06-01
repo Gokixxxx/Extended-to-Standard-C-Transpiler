@@ -1,6 +1,19 @@
-fn add(a) {
-    let ret = fn(b) { return a + b; };
-    return ret;
-}
+let x = 10;
+print(x);
+print(x + 5);
+
+fn doubled(x) { return x * 2; }
+print(doubled(7));
+
+fn add(a) { let ret = fn(b) { return a + b; }; return ret; }
 let f = add(3);
-let x = f(4);
+print(f(4));
+
+struct Rectangle { width: i32, height: i32 }
+impl Rectangle { fn area(&self) { return self.width * self.height; } }
+let rect = new Rectangle { width: 5, height: 6 };
+print(rect.area());
+
+let opt = Some(42);
+let val = match opt { Some(v) => v, None => 0 };
+print(val);

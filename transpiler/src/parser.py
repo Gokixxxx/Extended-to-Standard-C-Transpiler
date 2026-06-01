@@ -51,7 +51,12 @@ class RustLikeParser(Parser):
     def top_level(self, p):
         return p.statement
     
-    # ==================== Lambda 表达式====================
+    # ===== print ======
+    @_('PRINT LPAREN expr RPAREN')
+    def primary(self, p):
+        return ('print', p.expr)
+        
+    # ==================== Lambda 表达式 ====================
     @_('FN IDENTIFIER FAT_ARROW expr')
     def lambda_expr(self, p):
         # fn x => expr  等价于  fn(x) { return expr; }
@@ -404,19 +409,10 @@ if __name__ == '__main__':
     parser = RustLikeParser()
     
     code ='''
-    struct Rectangle {
-        width: i32,
-        height: i32
-    }
-
-    impl Rectangle {
-        fn area(&self) {
-            return self.width * self.height;
-        }
-    }
-
-    let rect = new Rectangle { width: 30, height: 50 };
-    let a = rect.area();
+    let x = 10;
+    print(x);
+    print(x + 5);
+    print(20);
     '''
     
     print("Parsing code:")

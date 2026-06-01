@@ -1221,6 +1221,11 @@ class CCodeGenerator:
                 if pre_stmts:
                     return '\n'.join(pre_stmts + [compound_literal])
                 return compound_literal
+            
+            elif expr[0] == 'print':
+                arg_code = self._generate_expr(expr[1], subs)
+                return f'printf("%d\\n", {arg_code})'
+
             elif expr[0] == 'field_access':
                 obj_code = self._generate_expr(expr[1], subs)
                 field_name = expr[2]

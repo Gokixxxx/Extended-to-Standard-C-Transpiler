@@ -9,6 +9,7 @@ class RustLikeLexer(Lexer):
     tokens = {'LET', 'FN', 'RETURN', 'IF', 'ELSE', 'FOR', 'IN', 'WHILE',
               'SOME', 'NONE', 'IS_SOME', 'IS_NONE', 'MATCH',
               'STRUCT', 'IMPL', 'NEW', 'I32', 'SELF',
+              'PRINT',
               'IDENTIFIER', 'NUMBER',
               'EQ', 'PLUS', 'MINUS', 'TIMES', 'DIVIDE',
               'EQEQ', 'NEQ', 'GT', 'LT', 'GTE', 'LTE',
@@ -27,6 +28,10 @@ class RustLikeLexer(Lexer):
         
     @_(r'\breturn\b')
     def RETURN(self, t):
+        return t
+    
+    @_(r'\bprint\b')
+    def PRINT(self, t):
         return t
         
     @_(r'\bif\b')
