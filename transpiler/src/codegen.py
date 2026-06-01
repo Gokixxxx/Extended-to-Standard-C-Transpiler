@@ -140,11 +140,11 @@ class CCodeGenerator:
             expr = node[2]
             if self._is_closure_expr(expr):
                 self.closure_vars.add(var_name)
-                # 4.14 新增：预扫描阶段就设置 closure_var_types
+                # 预扫描阶段就设置 closure_var_types
                 ret_c_type = self._infer_fn_expr_ret_c_type(expr)
                 closure_type = self._closure_type_for(len(expr[1]), ret_c_type)
                 self.closure_var_types[var_name] = closure_type
-            # 4.14 步骤2：右侧是闭包变量时，左侧也继承为闭包变量
+            # 右侧是闭包变量时，左侧也继承为闭包变量
             if isinstance(expr, tuple) and expr[0] == 'var':
                 src_name = expr[1]
                 if src_name in self.closure_vars:
@@ -612,7 +612,7 @@ class CCodeGenerator:
             lines.append(env_def)
             lines.append('')
 
-        # ===== 5.12 新增：C struct 定义 =====
+        # ===== C struct 定义 =====
         for struct_name, fields in self.struct_table.items():
             field_lines = []
             for field_name, field_type in fields:
@@ -783,7 +783,7 @@ class CCodeGenerator:
         var_name = node[1]
         expr = node[2]
 
-        # 新增：右侧是函数类型变量（无捕获函数指针 / 闭包变量）
+        # 右侧是函数类型变量（无捕获函数指针 / 闭包变量）
         if isinstance(expr, tuple) and expr[0] == 'var':
             src_name = expr[1]
             src_type = self._infer_expr_type(expr)
@@ -865,9 +865,8 @@ class CCodeGenerator:
             c_type = self._c_type_from_str(type_str)
 
         # 检查是否为函数类型
-                # 检查是否为函数类型
         if isinstance(type_str, str) and type_str.startswith('fn('):
-            # 新增：判断是否是闭包返回（方法调用返回闭包、函数调用返回闭包等）
+            # 判断是否是闭包返回（方法调用返回闭包、函数调用返回闭包等）
             if self._expr_returns_closure(expr):
                 parsed = self._parse_fn_type(type_str)
                 if parsed:

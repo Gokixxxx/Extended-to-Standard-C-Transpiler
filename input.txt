@@ -1,60 +1,6 @@
-struct Point {
-    x: i32,
-    y: i32
+fn add(a) {
+    let ret = fn(b) { return a + b; };
+    return ret;
 }
-
-struct Rectangle {
-    width: i32,
-    height: i32
-}
-
-impl Point {
-    fn distance_sq(&self) {
-        return self.x * self.x + self.y * self.y;
-    }
-}
-
-impl Rectangle {
-    fn area(&self) {
-        return self.width * self.height;
-    }
-    
-    fn scale(&self, factor) {
-        return self.width * factor;
-    }
-    
-    fn perimeter(&self) {
-        return 2 * (self.width + self.height);
-    }
-}
-
-let p = new Point { x: 3, y: 4 };
-let d = p.distance_sq();
-
-let rect1 = new Rectangle { width: 30, height: 50 };
-let a1 = rect1.area();
-let s1 = rect1.scale(2);
-let p1 = rect1.perimeter();
-
-let rect2 = new Rectangle { width: 10, height: 20 };
-let v = [rect1.area(), rect2.perimeter(), s1];
-
-let opt = Some(rect1.area());
-let result = match opt {
-    Some(x) => x + 1,
-    None => 0
-};
-
-let make_rect = fn(w, h) {
-    return new Rectangle { width: w, height: h };
-};
-let r3 = make_rect(5, 6);
-let a3 = r3.area();
-
-let adder = fn(a) {
-    return fn(b) {
-        return a + b;
-    };
-};
-let add5 = adder(5);
-let add5_result = add5(10);
+let f = add(3);
+let x = f(4);
