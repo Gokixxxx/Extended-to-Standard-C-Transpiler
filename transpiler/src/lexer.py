@@ -18,6 +18,11 @@ class RustLikeLexer(Lexer):
               'SEMI', 'COMMA', 'FAT_ARROW',
               'AMPERSAND', 'COLON'}
     
+    @_(r"'''[\s\S]*?'''")
+    def ignore_block_comment(self, t):
+        self.lineno += t.value.count('\n')
+        pass
+
     @_(r'\blet\b')
     def LET(self, t):
         return t
