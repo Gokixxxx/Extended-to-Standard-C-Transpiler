@@ -1,11 +1,9 @@
-fn mytest() {
-    let v = [1, 2, 3];
-    v.push(4);
-    v[1] = 99;
-    let a = v[1];
-    let b = v.len();
-    let c = v.pop();
-    v.remove(0);
+let x2 = 10;
+let r14 = 0;
+if (x2 > 5) {
+    let f4 = fn(a) => x2 + a;
+    r14 = f4(1);
+} else {
+    let g1 = fn(b) => x2 * b;
+    r14 = g1(2);
 }
-
-mytest();
