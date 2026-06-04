@@ -1320,17 +1320,21 @@ class CCodeGenerator:
                     for a in args:
                         arg_codes.append(self._generate_expr(a, subs))
                     return f"{c_func_name}({', '.join(arg_codes)})"
+
+                # 先统一生成参数代码
+                arg_codes = [self._generate_expr(a, subs) for a in args]
+
                 if method == 'push':
-                    return f"vec_push_i32(&{obj_code}, {', '.join(args)})"
+                    return f"vec_push_i32(&{obj_code}, {', '.join(arg_codes)})"
                 elif method == 'len':
                     return f"vec_len_i32({obj_code})"
                 elif method == 'pop':
                     return f"vec_pop_i32(&{obj_code})"
                 elif method == 'remove':
-                    return f"vec_remove_i32(&{obj_code}, {', '.join(args)})"
+                    return f"vec_remove_i32(&{obj_code}, {', '.join(arg_codes)})"
                 
                 if args:
-                    return f"{method}({obj_code}, {', '.join(args)})"
+                    return f"{method}({obj_code}, {', '.join(arg_codes)})"
                 else:
                     return f"{method}({obj_code})"
                 
