@@ -2,7 +2,7 @@
 C代码生成器
 """
 
-from typing import Any, List, Tuple, Dict
+from typing import Any, List, Tuple, Dict, Optional
 
 class CCodeGenerator:
     def __init__(self):
@@ -90,6 +90,10 @@ class CCodeGenerator:
     
     def _c_type_from_str(self, type_str: str) -> str:
         """将语义类型字符串转为 C 类型名"""
+        # 已经是 C 类型名，直接返回
+        if type_str in ('int', 'Option_i32', 'Vec_i32') or \
+           (isinstance(type_str, str) and type_str.startswith('Closure_')):
+            return type_str
         if type_str == 'i32':
             return 'int'
         elif type_str == 'bool':
@@ -406,6 +410,30 @@ class CCodeGenerator:
         params, ret = parsed
         ret_c_type = self._semantic_type_to_closure_type(ret)
         return self._closure_type_for(len(params), ret_c_type)
+    
+    def _find_first_return_stmt(self, stmts: list) -> Optional[Tuple]:
+        """递归在语句列表中查找第一个 return 语句"""
+        for stmt in stmts:
+            if not isinstance(stmt, tuple):
+                continue
+            if stmt[0] == 'return':
+                return stmt
+            elif stmt[0] == 'if':
+                r = self._find_first_return_stmt(stmt[2])
+                if r:
+                    return r
+                r = self._find_first_return_stmt(stmt[3])
+                if r:
+                    return r
+            elif stmt[0] == 'for_in':
+                r = self._find_first_return_stmt(stmt[3])
+                if r:
+                    return r
+            elif stmt[0] == 'while':
+                r = self._find_first_return_stmt(stmt[2])
+                if r:
+                    return r
+        return None
 
     # ==================== 类型推断 ====================
     def _infer_func_return_type(self, node: Tuple):
@@ -425,22 +453,21 @@ class CCodeGenerator:
             else:
                 self.param_types[p] = 'i32'
         
-        for stmt in body:
-            if stmt[0] == 'return':
-                ret_expr = stmt[1]
-                ret_type = self._infer_expr_type(ret_expr)
-                if isinstance(ret_type, str) and ret_type.startswith('fn('):
-                    parsed = self._parse_fn_type(ret_type)
-                    if parsed:
-                        params_ret, _ = parsed
-                        ret_type = self._closure_type(len(params_ret))
-                self.func_return_types[func_name] = ret_type
-                self.current_func_params = set()  # 清理
-                self.param_types = saved_param_types  # 恢复
-                return
+        return_stmt = self._find_first_return_stmt(body)
+        if return_stmt:
+            ret_expr = return_stmt[1]
+            ret_type = self._infer_expr_type(ret_expr)
+            if isinstance(ret_type, str) and ret_type.startswith('fn('):
+                parsed = self._parse_fn_type(ret_type)
+                if parsed:
+                    params_ret, _ = parsed
+                    ret_type = self._closure_type(len(params_ret))
+            self.func_return_types[func_name] = ret_type
+        else:
+            self.func_return_types[func_name] = 'int'
+
         self.current_func_params = set()  # 清理
         self.param_types = saved_param_types  # 恢复
-        self.func_return_types[func_name] = 'int'
 
     def _infer_method_return_type(self, node: Tuple):
         method_name = node[1]
@@ -467,15 +494,15 @@ class CCodeGenerator:
                 else:
                     self.param_types[p] = sig_params[i]
         
-        for stmt in body:
-            if stmt[0] == 'return':
-                ret_expr = stmt[1]
-                ret_type = self._infer_expr_type(ret_expr)
-                self.func_return_types[method_name] = ret_type
-                self.param_types = saved_param_types
-                return
+        return_stmt = self._find_first_return_stmt(body)
+        if return_stmt:
+            ret_expr = return_stmt[1]
+            ret_type = self._infer_expr_type(ret_expr)
+            self.func_return_types[method_name] = ret_type
+        else:
+            self.func_return_types[method_name] = 'int'
+
         self.param_types = saved_param_types
-        self.func_return_types[method_name] = 'int'
 
     def _infer_expr_type(self, expr: Any) -> str:
         """
@@ -734,7 +761,7 @@ class CCodeGenerator:
         # 释放函数级作用域中的闭包
         for free_stmt in self._exit_scope(lines):
             lines.append(f'    {free_stmt}')
-        
+
         lines.append('}')
         self.in_function = False
         self.current_func_params = set()

@@ -2,54 +2,37 @@
 #include "vec.h"
 #include "closure.h"
 
-struct __env_1 {
-    int a;
-};
-
-typedef struct {
-    int width;
-    int height;
-} Rectangle;
-
-static int __fn_1(void *__env, int b) {
-    struct __env_1 *env = (struct __env_1 *)__env;
-    int a = env->a;
-    return (a + b);
+Option_i32 find(Vec_i32 arr, int target) {
+    {
+        int __t1 = 0;
+        for (; __t1 < vec_len_i32(arr); __t1++) {
+            int x = vec_get_i32(arr, __t1);
+            if ((x > target)) {
+                return Some_i32(x);
+            }
+        }
+    }
+    return None_i32();
+    return 0;
 }
 
-int doubled(int x) {
-    return (x * 2);
-}
-
-Closure_i32_i32 add(int a) {
-    struct __env_1 *ret_env = malloc(sizeof(struct __env_1));
-    ret_env->a = a;
-    Closure_i32_i32 ret = {ret_env, __fn_1};
-    return ret;
-}
-
-int Rectangle_area(Rectangle *self) {
-    return ((self)->width * (self)->height);
+int mytest(void) {
+    Vec_i32 __t2 = vec_new_i32();
+    vec_push_i32(&__t2, 1);
+    vec_push_i32(&__t2, 3);
+    vec_push_i32(&__t2, 5);
+    vec_push_i32(&__t2, 2);
+    vec_push_i32(&__t2, 4);
+    Option_i32 result1 = find(__t2, 3);
+    Vec_i32 __t3 = vec_new_i32();
+    vec_push_i32(&__t3, 1);
+    vec_push_i32(&__t3, 2);
+    vec_push_i32(&__t3, 3);
+    Option_i32 result2 = find(__t3, 5);
+    return 0;
 }
 
 int main() {
-    int x = 10;
-    printf("%d\n", x);
-    printf("%d\n", (x + 5));
-    printf("%d\n", doubled(7));
-    Closure_i32_i32 f = add(3);
-    printf("%d\n", f.fn(f.env, 4));
-    
-    Rectangle rect = (Rectangle){5, 6};
-    printf("%d\n", Rectangle_area(&(rect)));
-    Option_i32 opt = Some_i32(42);
-    int val;
-    if (opt.is_some) {
-        val = opt.value;
-    } else {
-        val = 0;
-    }
-    printf("%d\n", val);
-    free(f.env);
+    mytest();
     return 0;
 }
