@@ -91,7 +91,7 @@ class CCodeGenerator:
     def _c_type_from_str(self, type_str: str) -> str:
         """将语义类型字符串转为 C 类型名"""
         # 已经是 C 类型名，直接返回
-        if type_str in ('int', 'Option_i32', 'Vec_i32') or \
+        if type_str in ('int', 'Option_i32', 'Vec_i32', 'void') or \
            (isinstance(type_str, str) and type_str.startswith('Closure_')):
             return type_str
         if type_str == 'i32':
@@ -464,7 +464,7 @@ class CCodeGenerator:
                     ret_type = self._closure_type(len(params_ret))
             self.func_return_types[func_name] = ret_type
         else:
-            self.func_return_types[func_name] = 'int'
+            self.func_return_types[func_name] = 'void'
 
         self.current_func_params = set()  # 清理
         self.param_types = saved_param_types  # 恢复
@@ -500,7 +500,7 @@ class CCodeGenerator:
             ret_type = self._infer_expr_type(ret_expr)
             self.func_return_types[method_name] = ret_type
         else:
-            self.func_return_types[method_name] = 'int'
+            self.func_return_types[method_name] = 'void'
 
         self.param_types = saved_param_types
 

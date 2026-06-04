@@ -13,10 +13,9 @@ Option_i32 find(Vec_i32 arr, int target) {
         }
     }
     return None_i32();
-    return 0;
 }
 
-int mytest(void) {
+void mytest(void) {
     Vec_i32 __t2 = vec_new_i32();
     vec_push_i32(&__t2, 1);
     vec_push_i32(&__t2, 3);
@@ -29,7 +28,6 @@ int mytest(void) {
     vec_push_i32(&__t3, 2);
     vec_push_i32(&__t3, 3);
     Option_i32 result2 = find(__t3, 5);
-    return 0;
 }
 
 int main() {
