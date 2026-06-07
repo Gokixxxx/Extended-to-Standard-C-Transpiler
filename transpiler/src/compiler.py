@@ -80,6 +80,7 @@ def compile_rustlike_to_c(source_code: str) -> str:
     compiler = Compiler()
     return compiler.compile(source_code)
 
+# ============ 内部测试 ============
 if __name__ == '__main__':
     import sys
     if len(sys.argv) == 1:

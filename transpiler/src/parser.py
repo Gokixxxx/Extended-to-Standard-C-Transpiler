@@ -404,6 +404,7 @@ class RustLikeParser(Parser):
     def primary(self, p):
         return ('fn_expr', [], p.statements)
 
+# ============ 内部测试 ============
 if __name__ == '__main__':
     lexer = RustLikeLexer()
     parser = RustLikeParser()

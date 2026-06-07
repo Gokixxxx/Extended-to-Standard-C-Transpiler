@@ -1,9 +1,17 @@
-let x2 = 10;
-let r14 = 0;
-if (x2 > 5) {
-    let f4 = fn(a) => x2 + a;
-    r14 = f4(1);
-} else {
-    let g1 = fn(b) => x2 * b;
-    r14 = g1(2);
+let v = [1, 2, 3, 4, 5];
+
+fn find(arr, target) {
+    for x in arr {
+        if (x > target) {
+            return Some(x);
+        }
+    }
+    return None;
 }
+
+let res = find(v, 3);
+let val = match res {
+    Some(v) => v,
+    None => 0
+};
+print(val);

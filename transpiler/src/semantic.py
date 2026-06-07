@@ -6,21 +6,19 @@ from typing import Dict, List, Optional, Tuple, Any
 
 class SemanticAnalyzer:
     def __init__(self):
-        self.symbol_table: List[Dict[str, str]] = [{}]
-        self.func_table: Dict[str, Dict[str, Any]] = {}
+        self.symbol_table: List[Dict[str, str]] = [{}]              # 作用域栈
+        self.func_table: Dict[str, Dict[str, Any]] = {}             # 函数签名表
         self.errors: List[str] = []
         self.warnings: List[str] = []
-        self.current_func: Optional[str] = None
-        self.deferred_funcs = []
-        self._in_fn_expr = False
-        self._fn_expr_ret_type = 'void'
-        self._predeclared: Dict[str, str] = {}
-        self.fn_expr_captures: Dict[int, List[str]] = {}
-        self._fn_expr_depth = 0   # fn_expr 嵌套深度
-        self.moved_vars = set()   # 记录 moved 的闭包变量
-        self.captured_closure_vars = set()   # 有捕获闭包变量名
-        self.struct_table: Dict[str, List[Tuple[str, str]]] = {}
-        self.impl_table: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        self.current_func: Optional[str] = None                     # 当前正在分析的函数名，用于类型一致性检查
+        self._in_fn_expr = False                                    # 标记是否在匿名函数(fn_expr)内部
+        self._predeclared: Dict[str, str] = {}                      # 先使用后声明的预声明变量类型表
+        self.fn_expr_captures: Dict[int, List[str]] = {}            # 闭包捕获表
+        self._fn_expr_depth = 0                                     # fn_expr嵌套深度
+        self.moved_vars = set()                                     # 记录 moved 的闭包变量
+        self.captured_closure_vars = set()                          # 有捕获闭包变量名
+        self.struct_table: Dict[str, List[Tuple[str, str]]] = {}    # struct 定义表
+        self.impl_table: Dict[str, Dict[str, Dict[str, Any]]] = {}  # impl 实现表
 
     def reset(self):
         self.symbol_table = [{}]
@@ -28,7 +26,6 @@ class SemanticAnalyzer:
         self.errors = []
         self.warnings = []
         self.current_func = None
-        self.deferred_funcs = []
         self._predeclared = {}
         self.fn_expr_captures.clear()
         self._fn_expr_depth = 0
@@ -96,7 +93,7 @@ class SemanticAnalyzer:
                             self.errors.append(f"错误: struct '{struct_name}' 中字段 '{field_name}' 重复定义")
                         field_names.add(field_name)
                         if field_type != 'i32':
-                            self.errors.append(f"错误: struct 字段暂只支持 i32 类型，'{field_name}' 类型为 '{field_type}'")
+                            self.errors.append(f"错误: struct 字段只支持 i32 类型，'{field_name}' 类型为 '{field_type}'")
                         field_list.append((field_name, field_type))
                     self.struct_table[struct_name] = field_list
         
@@ -119,7 +116,7 @@ class SemanticAnalyzer:
                             self.errors.append(f"错误: struct '{struct_name}' 的方法 '{method_name}' 重复定义")
                             continue
                         
-                        # === 新增：临时注入 self，供 _quick_infer_type 查询字段类型 ===
+                        # 注入 self，供 _quick_infer_type 查询字段类型
                         if params and isinstance(params[0], tuple) and params[0][0] == '&':
                             self._predeclared[params[0][1]] = f'&{struct_name}'
                         
@@ -132,7 +129,6 @@ class SemanticAnalyzer:
                         # 清理临时注入，避免污染后续分析
                         if params and isinstance(params[0], tuple) and params[0][0] == '&':
                             self._predeclared.pop(params[0][1], None)
-                        # === 新增结束 ===
                         
                         # 参数类型：&self → '&{struct_name}'，其余 → 'i32'
                         param_types = []
@@ -155,7 +151,7 @@ class SemanticAnalyzer:
                     params = top[2]
                     self.func_table[func_name] = {
                         'params': ['unknown'] * len(params),
-                        'param_names': list(params),   # 记录参数名顺序
+                        'param_names': list(params),
                         'return_type': 'unknown'
                     }
 
@@ -182,7 +178,7 @@ class SemanticAnalyzer:
         # 扫描所有调用节点，推断顶层函数参数类型
         self._collect_calls(ast)
         
-        # 分析所有节点（包括顶层 let_decl、expr_stmt、func_def）
+        # 分析所有节点
         self.visit(ast)
         
         return len(self.errors) == 0
@@ -205,10 +201,10 @@ class SemanticAnalyzer:
         if i >= len(type_str) or type_str[i:i+2] != '->':
             return None
         
-        params_str = type_str[3:i-1]   # i-1 是 ')' 的位置
+        params_str = type_str[3:i-1]   # i-1 是 ')' 
         ret_type   = type_str[i+2:]
         
-        # 解析参数列表（支持嵌套括号中的逗号）
+        # 解析参数列表
         params = []
         depth = 0
         current = ''
@@ -234,7 +230,6 @@ class SemanticAnalyzer:
         """递归扫描 AST，找到所有 call 节点并推断参数类型"""
         if isinstance(node, tuple):
             if node[0] == 'call':
-                # 处理这个调用，推断参数类型
                 self._infer_call_types(node)
             
             # 递归扫描所有子节点
@@ -275,11 +270,9 @@ class SemanticAnalyzer:
             if op == 'return':
                 return stmt[1]
             elif op == 'if':
-                # 先查 then 分支
                 expr = self._find_first_return_expr(stmt[2])
                 if expr is not None:
                     return expr
-                # 再查 else 分支
                 expr = self._find_first_return_expr(stmt[3])
                 if expr is not None:
                     return expr
@@ -294,7 +287,7 @@ class SemanticAnalyzer:
         return None
     
     def _quick_infer_type(self, node: Any) -> str:
-        """快速推断类型，不报错，用于参数类型推断"""
+        """快速推断类型，用于参数类型推断"""
         if not isinstance(node, tuple):
             return 'int'
         
@@ -460,7 +453,7 @@ class SemanticAnalyzer:
         if cond_type != 'bool':
             self.errors.append(f"错误: if 条件必须是 bool，但得到 {cond_type}")
         
-        # === 分支敏感分析：保存 moved_vars 快照 ===
+        # 保存 moved_vars 快照
         saved_moved = set(self.moved_vars)
         
         # then 分支（基于快照独立分析）
@@ -540,7 +533,7 @@ class SemanticAnalyzer:
 
     def _analyze_method_body(self, node: Tuple):
         method_name = node[1]
-        params = node[2]      # [('&', 'self'), 'factor', ...]
+        params = node[2]
         body = node[3]
 
         # 从 impl_table 查找所属 struct 和方法签名
@@ -576,7 +569,7 @@ class SemanticAnalyzer:
         self.exit_scope()
         self.current_func = prev_func
 
-    # ============ let 声明 ============
+    # ============ let ============
     def visit_let_decl(self, node: Tuple):
         var_name = node[1]
         expr_node = node[2]
@@ -604,7 +597,7 @@ class SemanticAnalyzer:
             src_name = expr_node[1]
             self.moved_vars.add(src_name)
 
-    # ============ return 语句 ============
+    # ============ return ============
     def visit_return(self, node: Tuple):
         # fn_expr 内允许 return
         if self.current_func is None and not self._in_fn_expr:
@@ -619,7 +612,7 @@ class SemanticAnalyzer:
             src_name = expr_node[1]
             self.moved_vars.add(src_name)
         
-        # 匿名函数不更新 func_table（因为不在其中）
+        # 匿名函数不更新 func_table
         if self.current_func == '<anonymous>':
             return
         
@@ -749,7 +742,6 @@ class SemanticAnalyzer:
 
         obj_type = self.visit_expr(obj_expr)
 
-        # ===== 5.10 新增：struct 方法调用 =====
         # 支持 'StructName' 和 '&StructName' 两种对象类型
         base_type = obj_type
         if isinstance(obj_type, str) and obj_type.startswith('&'):
@@ -766,7 +758,6 @@ class SemanticAnalyzer:
             return_type = method_info['return_type']
             
             # 参数数量检查：用户提供的 args + 隐式的 &self
-            # 实际调用时 args 是用户显式传的，需要与 expected_params[1:] 比较
             user_expected_params = expected_params[1:]  # 去掉 &self
             if len(args) != len(user_expected_params):
                 self.errors.append(
@@ -933,7 +924,7 @@ class SemanticAnalyzer:
             if node_type == 'var':
                 name = node[1]
 
-                # 4.14：检查是否已被移动
+                # 检查是否已被移动
                 if not self._is_local_var(name) and name in self.moved_vars:
                     self.errors.append(f"错误: 变量 '{name}' 已被移动，不能再次使用")
                     return 'unknown'
@@ -1087,9 +1078,8 @@ class SemanticAnalyzer:
 
                 # 存储捕获信息，供 Codegen 阶段使用
                 self.fn_expr_captures[id(node)] = free_vars
-                # =================================
 
-                # 原有逻辑继续：进入作用域、声明参数、推导返回类型
+                # 进入作用域、声明参数、推导返回类型
                 self._fn_expr_depth += 1        # 进入内层
                 self.enter_scope()
                 for p in params:
@@ -1136,7 +1126,7 @@ class SemanticAnalyzer:
             print("\n语义检查通过！")
 
 
-# ============ 使用示例 ============
+# ============ 内部测试 ============
 if __name__ == '__main__':
     from transpiler.src.lexer import RustLikeLexer
     from transpiler.src.parser import RustLikeParser

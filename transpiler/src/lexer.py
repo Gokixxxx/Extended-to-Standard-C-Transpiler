@@ -214,6 +214,7 @@ class RustLikeLexer(Lexer):
         print(f"lexical analysis error: line {self.lineno} , illegal value '{t.value[0]}'")
         self.index += 1
 
+# ============ 内部测试 ============
 if __name__ == '__main__':
     lexer = RustLikeLexer()
     code ='''

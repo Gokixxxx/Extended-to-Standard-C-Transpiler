@@ -2,42 +2,34 @@
 #include "vec.h"
 #include "closure.h"
 
-struct __env_1 {
-    int x2;
-};
-
-struct __env_2 {
-    int x2;
-};
-
-static int __fn_1(void *__env, int a) {
-    struct __env_1 *env = (struct __env_1 *)__env;
-    int x2 = env->x2;
-    return (x2 + a);
-}
-
-static int __fn_2(void *__env, int b) {
-    struct __env_2 *env = (struct __env_2 *)__env;
-    int x2 = env->x2;
-    return (x2 * b);
+Option_i32 find(Vec_i32 arr, int target) {
+    {
+        int __t1 = 0;
+        for (; __t1 < vec_len_i32(arr); __t1++) {
+            int x = vec_get_i32(arr, __t1);
+            if ((x > target)) {
+                return Some_i32(x);
+            }
+        }
+    }
+    return None_i32();
 }
 
 int main() {
-    int x2 = 10;
-    int r14 = 0;
-    if ((x2 > 5)) {
-        struct __env_1 *f4_env = malloc(sizeof(struct __env_1));
-        f4_env->x2 = x2;
-        Closure_i32_i32 f4 = {f4_env, __fn_1};
-        r14 = f4.fn(f4.env, 1);;
-        free(f4.env);
+    Vec_i32 v = vec_new_i32();
+    vec_push_i32(&v, 1);
+    vec_push_i32(&v, 2);
+    vec_push_i32(&v, 3);
+    vec_push_i32(&v, 4);
+    vec_push_i32(&v, 5);
+    Option_i32 res = find(v, 3);
+    int val;
+    if (res.is_some) {
+        val = res.value;
+    } else {
+        val = 0;
     }
-    else {
-        struct __env_2 *g1_env = malloc(sizeof(struct __env_2));
-        g1_env->x2 = x2;
-        Closure_i32_i32 g1 = {g1_env, __fn_2};
-        r14 = g1.fn(g1.env, 2);;
-        free(g1.env);
-    }
+    printf("%d\n", val);
+    free(v.data);
     return 0;
 }
