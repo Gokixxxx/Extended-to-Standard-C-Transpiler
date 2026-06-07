@@ -28,8 +28,6 @@ static inline bool is_none(Option_i32 opt) {
     return !opt.is_some;
 }
 
-// 安全取值
-// 如果是 Some，通过 out 指针输出值并返回 true；否则返回 false
 static inline bool unwrap_i32(Option_i32 opt, int *out) {
     if (opt.is_some) {
         if (out) *out = opt.value;
@@ -38,12 +36,10 @@ static inline bool unwrap_i32(Option_i32 opt, int *out) {
     return false;
 }
 
-// 如果是 Some 返回值，否则返回默认值 default_val
 static inline int unwrap_or_i32(Option_i32 opt, int default_val) {
     return opt.is_some ? opt.value : default_val;
 }
 
-// 如果是 Some 返回值，否则打印错误信息并终止程序
 static inline int expect_i32(Option_i32 opt, const char *msg) {
     if (!opt.is_some) {
         fprintf(stderr, "panic: %s\n", msg ? msg : "called `expect` on a `None` value");

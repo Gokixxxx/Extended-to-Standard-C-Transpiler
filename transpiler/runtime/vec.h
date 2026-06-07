@@ -5,8 +5,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-// TODO: GC
-
 typedef struct {
     int *data;
     int size;
