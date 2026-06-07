@@ -381,7 +381,7 @@ class RustLikeParser(Parser):
     def primary(self, p):
         return p.expr
     
-    # Lambda 归入 primary
+    # Lambda 表达式已在 parser 层脱糖为 fn_expr，此处直接作为 primary 接收
     @_('lambda_expr')
     def primary(self, p):
         return p.lambda_expr

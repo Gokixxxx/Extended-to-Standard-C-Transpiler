@@ -6,7 +6,7 @@ from typing import Any, List, Tuple, Dict, Optional
 
 class CCodeGenerator:
     def __init__(self):
-        self.includes = set()               # 记录需要 include 的头文件（未使用）
+        self.includes = set()               # 记录需要 include 的头文件
         self.func_defs = []                 # 收集命名函数的 C 代码定义
         self.main_stmts = []                # 收集 main 函数体的 C 语句
         self.func_return_types = {}         # 函数名 → C 返回类型
@@ -22,7 +22,7 @@ class CCodeGenerator:
         self.closure_return_funcs = set()   # 返回闭包的命名函数
         self.func_returns_closure = set()   # 标记返回闭包的命名函数
         self.temp_closures = []             # main() 中的临时闭包
-        self.func_temp_closures = []        # 当前命名函数/提升函数内的临时闭包
+        self.func_temp_closures = []        # 当前命名函数/提升后的匿名函数内的临时闭包
         self.current_func_params = set()    # 当前命名函数的参数名（避免与顶层闭包变量冲突）
         self.closure_struct_defs = {}       # 动态生成的闭包结构体定义
         self.let_var_types = {}             # let 变量名 → C 返回类型
@@ -113,7 +113,7 @@ class CCodeGenerator:
     
     # ==================== 闭包辅助方法 ====================
     def _pre_scan(self, node):
-        """预扫描 AST，标记闭包变量和返回闭包的函数"""
+        """预扫描 AST，标记闭包变量、返回闭包的函数，并预推断闭包类型"""
         if not isinstance(node, tuple):
             return
         op = node[0]
@@ -178,7 +178,7 @@ class CCodeGenerator:
     
     def _closure_type_for(self, param_count: int, ret_c_type: str) -> str:
         """根据参数数量和返回类型生成闭包结构体类型名，按需动态生成结构体定义"""
-        if ret_c_type == 'int':
+        if ret_c_type == 'int':     # 注意：int 返回类型依赖 closure.h 中的预定义，最多支持 2 个参数
             type_name = 'Closure_i32' + '_i32' * param_count
             self.closure_type_ret_map[type_name] = 'int'
             return type_name
@@ -315,7 +315,7 @@ class CCodeGenerator:
         for var in func_vec_vars:
             lines.append(f'    free({var}.data);')
 
-        # 释放提升函数内的临时闭包 Env
+        # 释放提升函数内未被转移的临时闭包 Env（已转移的 env 指针为 NULL，free(NULL) 安全）
         for tmp in self.func_temp_closures:
             lines.append(f'    free({tmp}.env);')
         self.func_temp_closures = []
@@ -327,7 +327,7 @@ class CCodeGenerator:
         self.in_function = saved_in_function
         lines.append('}')
 
-        # 为无捕获函数生成闭包 ABI 适配器
+        # 为无捕获函数生成闭包 ABI 适配器，使其可被统一按闭包结构体调用
         if not has_captures:
             adapter_name = f"{fn_name}_closure"
             adapter_params = ['void *__env'] + [f'int {p}' for p in params]
