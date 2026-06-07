@@ -1,17 +1,51 @@
+''' 自定义测试用例 '''
+''' 下面是一个示例（功能展示不完整，完整功能见test_output目录下的文件） '''
+''' 运行main.py, 输出到output.c '''
+
 let v = [1, 2, 3, 4, 5];
 
+struct Range {
+    min: i32,
+    max: i32
+}
+
+impl Range {
+    fn contains(&self, x) {
+        if (x < self.min) {
+            return 0;
+        }
+        if (x > self.max) {
+            return 0;
+        }
+        return 1;
+    }
+}
+
 fn find(arr, target) {
+    let range = new Range { min: target, max: 10 };
     for x in arr {
-        if (x > target) {
+        if (range.contains(x) > 0) {
             return Some(x);
         }
     }
     return None;
 }
 
-let res = find(v, 3);
+fn apply_twice(f, x) {
+    return f(f(x));
+}
+
+let doubler = fn(n) => n * 2;
+let ans = apply_twice(doubler, 3);      ''' 注意这里需要先用ans接收返回值再输出，不支持在print里进行类型推断 '''
+print(ans);                             ''' 12 '''
+
+v.push(6);
+v[3] = 11;
+
+let res = find(v, 4);
 let val = match res {
     Some(v) => v,
     None => 0
 };
-print(val);
+print(val);                             ''' 5 '''
+print(v.len());                         ''' 6 '''

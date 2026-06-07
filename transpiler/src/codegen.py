@@ -6,22 +6,21 @@ from typing import Any, List, Tuple, Dict, Optional
 
 class CCodeGenerator:
     def __init__(self):
-        self.includes = set()
-        self.func_defs = []
-        self.main_stmts = []
-        self.func_return_types = {}
-        self.vec_vars = set()
-        self.temp_counter = 0
-        self.in_function = False
-        self.func_signatures = {}
+        self.includes = set()               # 记录需要 include 的头文件（未使用）
+        self.func_defs = []                 # 收集命名函数的 C 代码定义
+        self.main_stmts = []                # 收集 main 函数体的 C 语句
+        self.func_return_types = {}         # 函数名 → C 返回类型
+        self.vec_vars = set()               # main() 中声明的 Vec 变量，退出时 free
+        self.temp_counter = 0               # 临时变量编号计数器
+        self.in_function = False            # 标记是否在命名函数/提升函数内部
+        self.func_signatures = {}           # 从 semantic 传入的函数签名表
         self.fn_expr_counter = 0            # 匿名函数编号计数器
         self.fn_expr_defs = []              # 提升后的全局函数定义代码
-        self.fn_expr_types = {}             # fn_expr AST节点 → C函数指针类型字符串
-        self.fn_expr_captures = {}
+        self.fn_expr_captures = {}          # 从 semantic 传入的闭包捕获表
         self.env_struct_defs = []           # Env 结构体定义代码
         self.closure_vars = set()           # 绑定闭包的变量名
         self.closure_return_funcs = set()   # 返回闭包的命名函数
-        self.func_returns_closure = set()
+        self.func_returns_closure = set()   # 标记返回闭包的命名函数
         self.temp_closures = []             # main() 中的临时闭包
         self.func_temp_closures = []        # 当前命名函数/提升函数内的临时闭包
         self.current_func_params = set()    # 当前命名函数的参数名（避免与顶层闭包变量冲突）
@@ -30,11 +29,10 @@ class CCodeGenerator:
         self.closure_type_ret_map = {}      # Closure_类型名 → fn 的返回类型
         self.closure_params = set()         # 当前函数中类型为闭包的参数名
         self.scope_stack = []               # 作用域栈，每个元素是 List[str]（该层声明的闭包变量名）
-        self.scope_temp_closures = []       # 每个作用域的临时闭包列表，与 scope_stack 同步
         self.closure_var_types = {}         # 闭包变量名 -> C 类型
         self.fn_ptr_targets = {}            # 变量名 -> 提升函数名，用于闭包包装时查找适配器
-        self.struct_table: Dict[str, List[Tuple[str, str]]] = {}
-        self.impl_table: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        self.struct_table: Dict[str, List[Tuple[str, str]]] = {}    # 从 semantic 传入的 struct 定义表
+        self.impl_table: Dict[str, Dict[str, Dict[str, Any]]] = {}  # 从 semantic 传入的 impl 方法表
         self.param_types: Dict[str, str] = {}   # 参数名 → 语义类型
 
     def generate(self, ast: Tuple, func_signatures: dict = None, fn_expr_captures: dict = None, struct_table: dict = None, impl_table=None) -> str:
@@ -47,7 +45,6 @@ class CCodeGenerator:
         self.func_signatures = func_signatures or {}
         self.fn_expr_counter = 0
         self.fn_expr_defs = []
-        self.fn_expr_types = {}
         self.fn_expr_captures = fn_expr_captures or {}
         self.closure_var_types = {}
         self.fn_ptr_targets = {}
@@ -90,10 +87,9 @@ class CCodeGenerator:
     
     def _c_type_from_str(self, type_str: str) -> str:
         """将语义类型字符串转为 C 类型名"""
-        # 已经是 C 类型名，直接返回
         if type_str in ('int', 'Option_i32', 'Vec_i32', 'void') or \
            (isinstance(type_str, str) and type_str.startswith('Closure_')):
-            return type_str
+            return type_str     # 已经是 C 类型名，直接返回
         if type_str == 'i32':
             return 'int'
         elif type_str == 'bool':
@@ -277,7 +273,6 @@ class CCodeGenerator:
         self.in_function = True
 
         self._enter_scope()   # 提升函数级作用域
-
         self.func_temp_closures = []  # 清空提升函数的临时闭包列表
 
         params = node[1]
@@ -332,7 +327,7 @@ class CCodeGenerator:
         self.in_function = saved_in_function
         lines.append('}')
 
-        # 为无捕获函数生成闭包 ABI 适配器（解决闭包参数传递时的签名不匹配）
+        # 为无捕获函数生成闭包 ABI 适配器
         if not has_captures:
             adapter_name = f"{fn_name}_closure"
             adapter_params = ['void *__env'] + [f'int {p}' for p in params]
@@ -345,7 +340,7 @@ class CCodeGenerator:
             else:
                 adapter_lines.append(f'    return {fn_name}();')
             adapter_lines.append('}')
-            lines.extend(adapter_lines)   # 追加到当前函数定义后面，一起返回
+            lines.extend(adapter_lines)
         
         return '\n'.join(lines)
     
@@ -384,7 +379,7 @@ class CCodeGenerator:
             self.scope_stack[-1].append(var_name)
         else:
             # 顶层（不在任何块中），退化为原来的行为
-            pass  # 或者保持到全局列表，视情况
+            pass
 
     def _infer_fn_expr_ret_semantic_type(self, fn_expr_node):
         body = fn_expr_node[2]
@@ -505,16 +500,7 @@ class CCodeGenerator:
         self.param_types = saved_param_types
 
     def _infer_expr_type(self, expr: Any) -> str:
-        """
-        推断表达式对应的 C 类型名。
-        
-        抽象类型 -> C 类型 映射：
-            i32         -> int
-            bool        -> int  (C 无 bool，用 0/1)
-            Vec<i32>    -> Vec_i32
-            Option<i32> -> Option_i32
-            fn(...)->R  -> 函数指针
-        """
+        """推断表达式对应的 C 类型名。"""
         if not isinstance(expr, tuple):
             return 'int'
         op = expr[0]
@@ -557,7 +543,7 @@ class CCodeGenerator:
             return expr[1]  # struct_name
         elif op == 'call':
             callee_expr = expr[1]
-            # 1. callee 是变量：优先查函数表/let变量表，避免被 Closure_ 短路
+            # callee 是变量：优先查函数表/let变量表，避免被 Closure_ 短路
             if callee_expr[0] == 'var':
                 func_name = callee_expr[1]
                 # 如果是当前函数的参数，返回 int
@@ -585,7 +571,7 @@ class CCodeGenerator:
                     closure_type = self.closure_var_types[func_name]
                     return self.closure_type_ret_map.get(closure_type, 'int')
                 return 'int'
-            # 2. callee 是闭包表达式（如 fn_expr 或 call 链中间结果）
+            # callee 是闭包表达式（如 fn_expr 或 call 链中间结果）
             callee_type = self._infer_expr_type(callee_expr)
             if isinstance(callee_type, str) and callee_type.startswith('Closure_'):
                 return self.closure_type_ret_map.get(callee_type, 'int')
@@ -780,7 +766,7 @@ class CCodeGenerator:
             expr_node = node[1]
             expr_code = self._generate_expr(node[1])
             move_stmt = ""
-            # 4.14 步骤3：return 转移
+            # return 转移
             if isinstance(expr_node, tuple) and expr_node[0] == 'var' and expr_node[1] in self.closure_vars:
                 src_name = expr_node[1]
                 if self.scope_stack:
@@ -848,7 +834,7 @@ class CCodeGenerator:
                 # 无捕获：函数指针
                 param_str = ', '.join(['int'] * len(params)) if params else 'void'
                 self.fn_ptr_targets[var_name] = fn_name
-                # 记录语义类型，供后续变量引用推断（如 let g = doubled）
+                # 记录语义类型，供后续变量引用推断
                 ret_semantic_type = self._infer_fn_expr_ret_semantic_type(expr)
                 fn_semantic_type = f"fn({','.join(['i32'] * len(params))})->{ret_semantic_type}"
                 self.let_var_types[var_name] = fn_semantic_type
@@ -893,7 +879,7 @@ class CCodeGenerator:
 
         # 检查是否为函数类型
         if isinstance(type_str, str) and type_str.startswith('fn('):
-            # 判断是否是闭包返回（方法调用返回闭包、函数调用返回闭包等）
+            # 判断是否是闭包返回（方法调用返回闭包、函数调用返回闭包）
             if self._expr_returns_closure(expr):
                 parsed = self._parse_fn_type(type_str)
                 if parsed:
@@ -919,7 +905,7 @@ class CCodeGenerator:
                         return '\n'.join(pre_stmts + [f'{closure_type} {var_name} = {actual_expr};'])
                     return f'{closure_type} {var_name} = {expr_code};'
             
-            # 原有：无捕获函数指针
+            # 无捕获函数指针
             arrow_idx = type_str.find(')->')
             if arrow_idx != -1:
                 params_str = type_str[3:arrow_idx]
@@ -949,7 +935,7 @@ class CCodeGenerator:
         
         expr_code = self._generate_expr(expr)
 
-        # 4.14 步骤3：let 转移 — 右侧是闭包变量时执行移动
+        # let 转移 — 右侧是闭包变量时执行移动
         move_stmt = ""
         if isinstance(expr, tuple) and expr[0] == 'var' and expr[1] in self.closure_vars:
             src_name = expr[1]
@@ -960,7 +946,7 @@ class CCodeGenerator:
                 self.closure_vars.add(var_name)
                 self.closure_var_types[var_name] = c_type
         
-        # 处理包含前置语句的表达式（如 call 中的 vec_literal 参数）
+        # 处理包含前置语句的表达式
         if '\n' in expr_code:
             parts = expr_code.split('\n')
             pre_stmts = parts[:-1]
@@ -1092,14 +1078,12 @@ class CCodeGenerator:
         self.closure_params = set()
 
         method_name = node[1]
-        params = node[2]  # [('&', 'self'), 'factor', ...]
+        params = node[2]
         body = node[3]
 
         method_info = None
         if struct_name and struct_name in self.impl_table:
             method_info = self.impl_table[struct_name].get(method_name)
-        
-        # codegen.py → _gen_method_def 方法，替换 ret_type 推断逻辑
 
         if method_info:
             sig_params = method_info.get('params', [])
@@ -1149,7 +1133,7 @@ class CCodeGenerator:
                 elif param_type == 'Vec<i32>':
                     param_parts.append(f'Vec_i32 {p}')
                 elif isinstance(param_type, str) and param_type.startswith('fn('):
-                    # 闭包参数（当前阶段 struct 方法不太可能用到，但保持一致性）
+                    # 闭包参数
                     parsed = self._parse_fn_type(param_type)
                     if parsed:
                         fn_params, fn_ret = parsed
@@ -1237,7 +1221,7 @@ class CCodeGenerator:
                         continue
                     
                     field_code = self._generate_expr(field_expr, subs)
-                    # 处理多行前置语句（如闭包构造、vec_literal、返回闭包的调用）
+                    # 处理多行前置语句
                     if '\n' in field_code:
                         parts = field_code.split('\n')
                         pre_stmts.extend(parts[:-1])
@@ -1307,7 +1291,7 @@ class CCodeGenerator:
                 args = expr[3]
                 obj_type = self._infer_expr_type(expr[1])
                 base_type = obj_type[1:] if isinstance(obj_type, str) and obj_type.startswith('&') else obj_type
-                # ===== struct 方法调用 =====
+                # struct 方法调用 
                 if base_type in self.struct_table:
                     c_func_name = f"{base_type}_{method}"
                     # 隐式注入 &self
@@ -1321,7 +1305,7 @@ class CCodeGenerator:
                         arg_codes.append(self._generate_expr(a, subs))
                     return f"{c_func_name}({', '.join(arg_codes)})"
 
-                # 先统一生成参数代码
+                # 统一生成参数代码
                 arg_codes = [self._generate_expr(a, subs) for a in args]
 
                 if method == 'push':
@@ -1351,10 +1335,7 @@ class CCodeGenerator:
             elif expr[0] == 'call':
                 callee_expr = expr[1]
                 args = expr[2]
-                # 判断 callee 是否为闭包
                 is_closure = self._is_closure_callee(callee_expr)
-                # 生成参数代码
-                # 获取形参类型列表，用于判断是否需要包装
                 param_types = []
                 if callee_expr[0] == 'var':
                     func_name = callee_expr[1]
@@ -1365,7 +1346,6 @@ class CCodeGenerator:
                 pre_stmts = []
                 for i, a in enumerate(args):
                     expected_type = param_types[i] if i < len(param_types) else 'unknown'
-                    # vec_literal 保持原有特殊处理
                     if a[0] == 'vec_literal':
                         tmp = self._new_temp()
                         self.includes.add('vec.h')
@@ -1381,7 +1361,7 @@ class CCodeGenerator:
                         parts = arg_code.split('\n')
                         pre_stmts.extend(parts[:-1])
                         arg_code = parts[-1]
-                    # 关键：期望类型是函数，但实参不是闭包 → 包装为闭包结构体
+                    # 期望类型是函数，但实参不是闭包 → 包装为闭包结构体
                     if isinstance(expected_type, str) and expected_type.startswith('fn('):
                         if not self._expr_is_closure(a):
                             parsed = self._parse_fn_type(expected_type)
@@ -1428,7 +1408,7 @@ class CCodeGenerator:
                 closure_type = None
                 
                 if not needs_temp and callee_expr[0] in ('call', 'method_call'):
-                    # callee 是普通函数调用，但返回闭包（如 add(3) 返回 Closure）
+                    # callee 是普通函数调用，但返回闭包
                     if isinstance(callee_ret_type, str) and callee_ret_type.startswith('Closure_'):
                         needs_temp = True
                         is_closure = True
@@ -1465,7 +1445,7 @@ class CCodeGenerator:
                 lhs = expr[1]
                 rhs_expr = expr[2]
                 rhs = self._generate_expr(rhs_expr, subs)
-                # 4.14 步骤3：assign 转移
+                # assign 转移
                 rhs_move = ""
                 if isinstance(rhs_expr, tuple) and rhs_expr[0] == 'var' and rhs_expr[1] in self.closure_vars:
                     src_name = rhs_expr[1]
@@ -1489,7 +1469,7 @@ class CCodeGenerator:
         return str(expr)
 
 
-# ==================== 测试 ====================
+# ============ 内部测试 ============
 def test_codegen():
     print("=== C 代码生成器测试 ===")
     
