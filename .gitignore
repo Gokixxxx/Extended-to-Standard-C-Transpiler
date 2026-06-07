@@ -75,3 +75,11 @@ instructor.md
 *.out
 output
 debugcode.*
+
+# test
+./test
+testP0.py
+testP4.py
+testP5.py
+testP6.py
+test_sample.py
