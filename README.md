@@ -36,12 +36,8 @@
 │   │   ├── parser.py         # 语法分析器
 │   │   ├── semantic.py       # 语义分析器
 │   │   └── codegen.py        # C 代码生成器
-│   ├── tests/
-│   │   ├── __init__.py
-│   │   ├── testP0.py         # 基础功能测试
-│   │   ├── testP4.py         # 闭包/高阶函数测试
-│   │   ├── testP5.py         # Struct/Impl 测试
-│   │   └── testP6.py         # print 输出测试
+│   ├── test_outputs/
+│   │   ├── *.txt			 # 测试用例
 │   └── runtime/
 │       ├── option.h          # Option<i32> 运行时
 │       ├── vec.h             # Vec<i32> 运行时
