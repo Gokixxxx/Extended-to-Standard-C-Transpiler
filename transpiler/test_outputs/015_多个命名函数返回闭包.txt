@@ -1,0 +1,82 @@
+======================================================================
+测试 #15: 多个命名函数返回闭包
+======================================================================
+
+----------------------------------------------------------------------
+【输入源码】
+----------------------------------------------------------------------
+fn make_multiplier(factor) {
+            return fn(x) => x * factor;
+        }
+        fn make_offset_adder(base, delta) {
+            return fn(x) => base + delta + x;
+        }
+        let triple_fn = make_multiplier(3);
+        let r6 = triple_fn(7);
+        let add_150 = make_offset_adder(100, 50);
+        let r7 = add_150(7);
+
+----------------------------------------------------------------------
+【生成的 C 代码】
+----------------------------------------------------------------------
+#include "option.h"
+#include "vec.h"
+#include "closure.h"
+
+struct __env_1 {
+    int factor;
+};
+
+struct __env_2 {
+    int base;
+    int delta;
+};
+
+static int __fn_1(void *__env, int x) {
+    struct __env_1 *env = (struct __env_1 *)__env;
+    int factor = env->factor;
+    return (x * factor);
+}
+
+static int __fn_2(void *__env, int x) {
+    struct __env_2 *env = (struct __env_2 *)__env;
+    int base = env->base;
+    int delta = env->delta;
+    return ((base + delta) + x);
+}
+
+Closure_i32_i32 make_multiplier(int factor) {
+    struct __env_1 *__t1 = malloc(sizeof(struct __env_1));
+    __t1->factor = factor;
+    Closure_i32_i32 __t2 = {__t1, __fn_1};
+    return __t2;
+}
+
+Closure_i32_i32 make_offset_adder(int base, int delta) {
+    struct __env_2 *__t3 = malloc(sizeof(struct __env_2));
+    __t3->base = base;
+    __t3->delta = delta;
+    Closure_i32_i32 __t4 = {__t3, __fn_2};
+    return __t4;
+}
+
+int main() {
+    Closure_i32_i32 triple_fn = make_multiplier(3);
+    int r6 = triple_fn.fn(triple_fn.env, 7);
+    Closure_i32_i32 add_150 = make_offset_adder(100, 50);
+    int r7 = add_150.fn(add_150.env, 7);
+    free(triple_fn.env);
+    free(add_150.env);
+    return 0;
+}
+
+----------------------------------------------------------------------
+【测试结果】
+----------------------------------------------------------------------
+状态: PASS
+编译: 通过
+运行: 通过
+期望输出: ['21', '157']
+实际输出: ['21', '157']
+
+======================================================================

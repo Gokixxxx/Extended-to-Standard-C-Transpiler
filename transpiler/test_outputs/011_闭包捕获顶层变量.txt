@@ -1,0 +1,79 @@
+======================================================================
+测试 #11: 闭包捕获顶层变量
+======================================================================
+
+----------------------------------------------------------------------
+【输入源码】
+----------------------------------------------------------------------
+let x1 = 1;
+        let y1 = 2;
+        let f1 = fn(a) => fn(b) => x1 + y1 + a + b;
+        let r2 = f1(3)(4);
+
+----------------------------------------------------------------------
+【生成的 C 代码】
+----------------------------------------------------------------------
+#include "option.h"
+#include "vec.h"
+#include "closure.h"
+
+typedef struct {
+                void *env;
+                Closure_i32_i32 (*fn)(void *env, int);
+            } Closure_Closure_i32_i32__i32;
+
+struct __env_2 {
+    int x1;
+    int y1;
+    int a;
+};
+
+struct __env_1 {
+    int x1;
+    int y1;
+};
+
+static int __fn_2(void *__env, int b) {
+    struct __env_2 *env = (struct __env_2 *)__env;
+    int x1 = env->x1;
+    int y1 = env->y1;
+    int a = env->a;
+    return (((x1 + y1) + a) + b);
+}
+
+static Closure_i32_i32 __fn_1(void *__env, int a) {
+    struct __env_1 *env = (struct __env_1 *)__env;
+    int x1 = env->x1;
+    int y1 = env->y1;
+    struct __env_2 *__t1 = malloc(sizeof(struct __env_2));
+    __t1->x1 = x1;
+    __t1->y1 = y1;
+    __t1->a = a;
+    Closure_i32_i32 __t2 = {__t1, __fn_2};
+    return __t2;
+}
+
+int main() {
+    int x1 = 1;
+    int y1 = 2;
+    struct __env_1 *f1_env = malloc(sizeof(struct __env_1));
+    f1_env->x1 = x1;
+    f1_env->y1 = y1;
+    Closure_Closure_i32_i32__i32 f1 = {f1_env, __fn_1};
+    Closure_i32_i32 __t3 = f1.fn(f1.env, 3);
+    int r2 = __t3.fn(__t3.env, 4);
+    free(__t3.env);
+    free(f1.env);
+    return 0;
+}
+
+----------------------------------------------------------------------
+【测试结果】
+----------------------------------------------------------------------
+状态: PASS
+编译: 通过
+运行: 通过
+期望输出: ['10']
+实际输出: ['10']
+
+======================================================================

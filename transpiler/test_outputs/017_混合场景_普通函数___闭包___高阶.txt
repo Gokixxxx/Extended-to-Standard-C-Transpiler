@@ -1,0 +1,83 @@
+======================================================================
+测试 #17: 混合场景：普通函数 + 闭包 + 高阶
+======================================================================
+
+----------------------------------------------------------------------
+【输入源码】
+----------------------------------------------------------------------
+fn plain_add(a, b) {
+            return a + b;
+        }
+        fn make_adder3(base) {
+            return fn(x) => base + x;
+        }
+        fn apply_twice2(f, x) {
+            return f(f(x));
+        }
+        let a1 = plain_add(2, 3);
+        let add10b = make_adder3(10);
+        let b1 = add10b(5);
+        let doubled2 = fn(n) => n * 2;
+        let c1 = apply_twice2(doubled2, 4);
+
+----------------------------------------------------------------------
+【生成的 C 代码】
+----------------------------------------------------------------------
+#include "option.h"
+#include "vec.h"
+#include "closure.h"
+
+struct __env_1 {
+    int base;
+};
+
+static int __fn_1(void *__env, int x) {
+    struct __env_1 *env = (struct __env_1 *)__env;
+    int base = env->base;
+    return (base + x);
+}
+
+static int __fn_2(int n) {
+    return (n * 2);
+}
+static int __fn_2_closure(void *__env, int n) {
+    (void)__env;
+    return __fn_2(n);
+}
+
+int plain_add(int a, int b) {
+    return (a + b);
+}
+
+Closure_i32_i32 make_adder3(int base) {
+    struct __env_1 *__t1 = malloc(sizeof(struct __env_1));
+    __t1->base = base;
+    Closure_i32_i32 __t2 = {__t1, __fn_1};
+    return __t2;
+}
+
+int apply_twice2(Closure_i32_i32 f, int x) {
+    return f.fn(f.env, f.fn(f.env, x));
+}
+
+int main() {
+    int a1 = plain_add(2, 3);
+    Closure_i32_i32 add10b = make_adder3(10);
+    int b1 = add10b.fn(add10b.env, 5);
+    int (*doubled2)(int) = __fn_2;
+    Closure_i32_i32 __t3 = {NULL, __fn_2_closure};
+    int c1 = apply_twice2(__t3, 4);
+    free(add10b.env);
+    return 0;
+}
+
+----------------------------------------------------------------------
+【测试结果】
+----------------------------------------------------------------------
+状态: PASS
+编译: 通过
+运行: 通过
+期望输出: ['5', '15', '16']
+实际输出: ['5', '15', '16']
+
+======================================================================

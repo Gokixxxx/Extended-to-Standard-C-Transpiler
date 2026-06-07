@@ -1,0 +1,79 @@
+======================================================================
+测试 #12: 三层嵌套闭包 triple(1)(2)(3)
+======================================================================
+
+----------------------------------------------------------------------
+【输入源码】
+----------------------------------------------------------------------
+let triple = fn(a) => fn(b) => fn(c) => a + b + c;
+        let r3 = triple(1)(2)(3);
+
+----------------------------------------------------------------------
+【生成的 C 代码】
+----------------------------------------------------------------------
+#include "option.h"
+#include "vec.h"
+#include "closure.h"
+
+typedef struct {
+                void *env;
+                Closure_i32_i32 (*fn)(void *env, int);
+            } Closure_Closure_i32_i32__i32;
+
+struct __env_3 {
+    int a;
+    int b;
+};
+
+struct __env_2 {
+    int a;
+};
+
+static int __fn_3(void *__env, int c) {
+    struct __env_3 *env = (struct __env_3 *)__env;
+    int a = env->a;
+    int b = env->b;
+    return ((a + b) + c);
+}
+
+static Closure_i32_i32 __fn_2(void *__env, int b) {
+    struct __env_2 *env = (struct __env_2 *)__env;
+    int a = env->a;
+    struct __env_3 *__t1 = malloc(sizeof(struct __env_3));
+    __t1->a = a;
+    __t1->b = b;
+    Closure_i32_i32 __t2 = {__t1, __fn_3};
+    return __t2;
+}
+
+static Closure_Closure_i32_i32__i32 __fn_1(int a) {
+    struct __env_2 *__t3 = malloc(sizeof(struct __env_2));
+    __t3->a = a;
+    Closure_Closure_i32_i32__i32 __t4 = {__t3, __fn_2};
+    return __t4;
+}
+static Closure_Closure_i32_i32__i32 __fn_1_closure(void *__env, int a) {
+    (void)__env;
+    return __fn_1(a);
+}
+
+int main() {
+    Closure_Closure_i32_i32__i32 (*triple)(int) = __fn_1;
+    Closure_Closure_i32_i32__i32 __t5 = triple(1);
+    Closure_i32_i32 __t6 = __t5.fn(__t5.env, 2);
+    int r3 = __t6.fn(__t6.env, 3);
+    free(__t5.env);
+    free(__t6.env);
+    return 0;
+}
+
+----------------------------------------------------------------------
+【测试结果】
+----------------------------------------------------------------------
+状态: PASS
+编译: 通过
+运行: 通过
+期望输出: ['6']
+实际输出: ['6']
+
+======================================================================
